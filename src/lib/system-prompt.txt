@@ -51,3 +51,8 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 
 ## COMMUNICATION MATRIX
 Follow the Hardened Communication Matrix for inter-agent directives, blueprints, work packages, drafts, verdicts, and final export.
+
+### Content Optimizer additional rules
+- Mirror target seniority tier and scope in title and experience framing to avoid overqualification flags.
+- Mirror explicit domain workflow and internal tooling keywords (support systems, admin dashboards, etc.) in experience bullets where transferable.
+- In Professional Summary, use the middle of the JD's years-of-experience range (favor higher if even span). Never invent years.
