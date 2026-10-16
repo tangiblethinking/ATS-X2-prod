@@ -1,39 +1,45 @@
 export const PIPELINE_STEPS = [
   {
     id: 1,
-    key: "extract",
-    title: "Extract ATS keywords",
-    blurb: "Pull keywords and phrases from the job description.",
+    key: "scraper",
+    title: "Job Spec Scraper & Intent Analyst",
+    blurb: "Ingest URL or text, extract ATS keywords, hard/soft skills, rubric, diagnostic log.",
   },
   {
     id: 2,
-    key: "rewrite",
-    title: "Rewrite resume",
-    blurb: "Rewrite the full resume using those terms, truthfully.",
+    key: "integrity",
+    title: "Resume Integrity Architect",
+    blurb: "Lock baseline facts, map keyword zones, identify skill gaps, enforce factuality matrix.",
   },
   {
     id: 3,
-    key: "grammar",
-    title: "Grammar check",
-    blurb: "Fix spelling and make the language sound like a person wrote it.",
+    key: "coordinator",
+    title: "Task & Pipeline Coordinator",
+    blurb: "Decompose into atomic sections, orchestrate parallel work packages, manage retries.",
   },
   {
     id: 4,
-    key: "audit",
-    title: "Keyword audit",
-    blurb: "Cut stuffing, repetition, and keywords that do not fit.",
+    key: "optimizer",
+    title: "Content Optimizer / Writer",
+    blurb: "Rewrite isolated sections with natural keyword integration, strong verbs, factual constraints.",
   },
   {
     id: 5,
-    key: "layout",
-    title: "Lock layout",
-    blurb: "Keep the original HTML structure, classes, and styles.",
+    key: "auditor",
+    title: "Fact-Check & Hallucination Auditor",
+    blurb: "Detect and remediate hallucinations, restore 100% factual fidelity.",
   },
   {
     id: 6,
-    key: "clean",
-    title: "Clean HTML",
-    blurb: "Return a complete, fence-free HTML document.",
+    key: "ats-sim",
+    title: "ATS Simulator & Formatting Validator",
+    blurb: "Simulate ATS parse (Workday etc.), keyword match %, formatting check, PASS/FAIL.",
+  },
+  {
+    id: 7,
+    key: "polish",
+    title: "Final Polish & Export Manager",
+    blurb: "Clean single-column copy-ready text + skill gap telemetry report.",
   },
 ] as const;
 
@@ -45,6 +51,9 @@ export type KeywordSet = {
   phrases: string[];
   must_have: string[];
   nice_to_have: string[];
+  hard_skills?: string[];
+  soft_skills?: string[];
+  rubric?: Record<string, number>;
 };
 
 export type AuditFlag = {
@@ -55,6 +64,8 @@ export type AuditFlag = {
 export type AuditResult = {
   flags: AuditFlag[];
   keyword_counts: Record<string, number>;
+  match_percentage?: number;
+  skill_gaps?: string[];
 };
 
 export const API_KEY_STORAGE = "ats-align.gemini-api-key";

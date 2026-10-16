@@ -355,3 +355,71 @@ export const generateCoverLetter = createServerFn({ method: "POST" })
     }
     return { ok: true as const, html };
   });
+
+// Additional multi-agent steps
+
+export const buildIntegritySchema = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey,
+      json: true,
+      maxTokens: 4000,
+      temperature: 0.1,
+      user: `ROLE: Resume Integrity Architect. Catalog every factual detail from the original resume into an immutable baseline schema. Map keyword injection zones. Flag skill gaps. Output JSON with baseline_facts, mapping_strategy, skill_gaps, factuality_rules.\n\nRESUME:\n${data.resumeHtml}\n\nKEYWORDS:\n${JSON.stringify(data.keywords)}`,
+    });
+    if (!result.ok) return result;
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      return { ok: true as const, schema: parseJsonObject(result.text) };
+    } catch {
+      return { ok: false as const, error: "Integrity schema failed." };
+    }
+  });
+
+export const auditAndRemediate = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, draftHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey,
+      maxTokens: 8192,
+      temperature: 0.1,
+      user: `ROLE: Fact-Check & Hallucination Auditor. Compare the draft against original facts. Strip any hallucinations, altered dates/metrics/titles/companies. Remove forced unsupported keywords. Return ONLY the remediated HTML.\n\nORIGINAL:\n${data.originalHtml}\n\nDRAFT:\n${data.draftHtml}`,
+    });
+    if (!result.ok) return result;
+    const html = stripMarkdownFences(result.text);
+    return { ok: true as const, html };
+  });
+
+export const simulateATS = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey,
+      json: true,
+      maxTokens: 2000,
+      temperature: 0.1,
+      user: `ROLE: ATS Simulator & Formatting Validator. Simulate parse for Workday/Greenhouse/Lever. Calculate keyword match percentage (exclude skill gaps). Check for tables/columns/garbled text. Return JSON: { "verdict": "PASS"|"FAIL", "match_percentage": number, "issues": string[], "logs": string }.\n\nRESUME:\n${data.resumeHtml}\n\nKEYWORDS:\n${JSON.stringify(data.keywords)}`,
+    });
+    if (!result.ok) return result;
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      return { ok: true as const, result: parseJsonObject(result.text) };
+    } catch {
+      return { ok: false as const, error: "ATS simulation failed." };
+    }
+  });
+
+export const finalPolish = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, skillGaps: z.array(z.string()).optional() }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey,
+      maxTokens: 8192,
+      temperature: 0.2,
+      user: `ROLE: Final Polish & Export Manager. Convert to clean single-column plain text ready for copy-paste. Strip all HTML, markdown boxes, metadata. Append a clear Skill Gap Summary and match notes at the end.\n\nRESUME HTML:\n${data.resumeHtml}\n\nSKILL GAPS: ${(data.skillGaps || []).join(", ") || "none"}`,
+    });
+    if (!result.ok) return result;
+    const text = stripMarkdownFences(result.text);
+    return { ok: true as const, text };
+  });
