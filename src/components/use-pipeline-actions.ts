@@ -1,23 +1,7 @@
-import {
-  buildIntegritySchema,
-  auditAndRemediate,
-  simulateATS,
-  finalPolish, useCallback } from "react";
-import {
-  buildIntegritySchema,
-  auditAndRemediate,
-  simulateATS,
-  finalPolish, toast } from "sonner";
-import {
-  buildIntegritySchema,
-  auditAndRemediate,
-  simulateATS,
-  finalPolish, isPlausibleApiKey } from "@/lib/api-key-store";
-import {
-  buildIntegritySchema,
-  auditAndRemediate,
-  simulateATS,
-  finalPolish, looksLikeHtml } from "@/lib/html-clean";
+import { useCallback } from "react";
+import { toast } from "sonner";
+import { isPlausibleApiKey } from "@/lib/api-key-store";
+import { looksLikeHtml } from "@/lib/html-clean";
 import {
   buildIntegritySchema,
   auditAndRemediate,
@@ -35,10 +19,6 @@ import {
 } from "@/lib/optimize";
 import type { JobResult } from "@/lib/job-search";
 import {
-  buildIntegritySchema,
-  auditAndRemediate,
-  simulateATS,
-  finalPolish,
   MAX_JOB_CHARS,
   type AuditResult,
   type KeywordSet,
