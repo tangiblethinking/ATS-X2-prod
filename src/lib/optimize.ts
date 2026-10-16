@@ -413,11 +413,33 @@ export const simulateATS = createServerFn({ method: "POST" })
 export const finalPolish = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, skillGaps: z.array(z.string()).optional() }))
   .handler(async ({ data }) => {
+    // Strip tags locally so the model only cleans wording + adds the gap report
+    const plain = data.resumeHtml
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, "\n")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+      .slice(0, 12000);
+
     const result = await chat({
       apiKey: data.apiKey,
-      maxTokens: 8192,
-      temperature: 0.2,
-      user: `ROLE: Final Polish & Export Manager. Convert to clean single-column plain text ready for copy-paste. Strip all HTML, markdown boxes, metadata. Append a clear Skill Gap Summary and match notes at the end.\n\nRESUME HTML:\n${data.resumeHtml}\n\nSKILL GAPS: ${(data.skillGaps || []).join(", ") || "none"}`,
+      maxTokens: 3072,
+      temperature: 0.15,
+      user: `ROLE: Final Polish & Export Manager.
+Clean the resume text below into a single-column, copy-ready plain text resume.
+- Keep all factual content.
+- Remove any leftover tags, markdown fences, or visual clutter.
+- Append a short "Skill Gap Summary" section at the end.
+
+RESUME TEXT:
+${plain}
+
+SKILL GAPS: ${(data.skillGaps || []).join(", ") || "none"}`,
     });
     if (!result.ok) return result;
     const text = stripMarkdownFences(result.text);

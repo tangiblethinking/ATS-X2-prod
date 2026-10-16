@@ -129,13 +129,21 @@ export async function geminiChat(opts: {
   for (const model of FREE_TIER_MODELS) {
     const url = `${GEMINI_BASE}/models/${model}:generateContent`;
     let res: Response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
     try {
       res = await fetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
-    } catch {
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === "AbortError") {
+        lastError = "The model took too long to respond. Try again.";
+        continue;
+      }
       lastError = "Could not reach the model service.";
       continue;
     }
@@ -159,6 +167,7 @@ export async function geminiChat(opts: {
       }
     }
 
+    clearTimeout(timeoutId);
     if (res.ok) {
       try {
         const text = await parseGenerateBody(res);
