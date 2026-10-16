@@ -3,9 +3,16 @@ type ChatMessage = {
   content: string;
 };
 
+export type ChatMeta = {
+  model: string;
+  finishReason?: string;
+  inputChars: number;
+  outputChars: number;
+};
+
 export type ChatResult =
-  | { ok: true; text: string }
-  | { ok: false; error: string; status?: number };
+  | { ok: true; text: string; meta: ChatMeta }
+  | { ok: false; error: string; status?: number; meta?: Partial<ChatMeta> };
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -35,7 +42,7 @@ function statusError(status: number): string {
     return "That Gemini model is not available on this key. Try another free Flash model or create a new key.";
   }
   if (status === 429) {
-    return "Google free-tier rate limit hit. Wait a minute and run again (Flash-Lite has higher free RPM)."
+    return "Google free-tier rate limit hit. Wait a minute and run again (Flash-Lite has higher free RPM).";
   }
   if (status >= 500) {
     return "The Gemini service is unavailable. Try again shortly.";
@@ -43,7 +50,7 @@ function statusError(status: number): string {
   return `The API returned an error (${status}).`;
 }
 
-async function parseGenerateBody(res: Response): Promise<string> {
+async function parseGenerateBody(res: Response): Promise<{ text: string; finishReason?: string }> {
   const body = (await res.json()) as {
     candidates?: {
       content?: { parts?: { text?: string }[] };
@@ -62,15 +69,16 @@ async function parseGenerateBody(res: Response): Promise<string> {
     .join("")
     .trim();
 
+  const finishReason = body.candidates?.[0]?.finishReason;
+
   if (!text) {
-    const reason = body.candidates?.[0]?.finishReason;
     throw new Error(
-      reason
-        ? `The model returned an empty response (${reason}).`
+      finishReason
+        ? `The model returned an empty response (${finishReason}).`
         : "The model returned an empty response.",
     );
   }
-  return text;
+  return { text, finishReason };
 }
 
 function buildPayload(opts: {
@@ -110,6 +118,10 @@ function buildPayload(opts: {
   return payload;
 }
 
+function estimateInputChars(messages: ChatMessage[]): number {
+  return messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
+}
+
 export async function geminiChat(opts: {
   apiKey: string;
   messages: ChatMessage[];
@@ -118,6 +130,7 @@ export async function geminiChat(opts: {
   json?: boolean;
 }): Promise<ChatResult> {
   const payload = buildPayload(opts);
+  const inputChars = estimateInputChars(opts.messages);
   const headers = {
     "Content-Type": "application/json",
     "x-goog-api-key": opts.apiKey,
@@ -170,8 +183,17 @@ export async function geminiChat(opts: {
     clearTimeout(timeoutId);
     if (res.ok) {
       try {
-        const text = await parseGenerateBody(res);
-        return { ok: true, text };
+        const { text, finishReason } = await parseGenerateBody(res);
+        return {
+          ok: true,
+          text,
+          meta: {
+            model,
+            finishReason,
+            inputChars,
+            outputChars: text.length,
+          },
+        };
       } catch (err) {
         return {
           ok: false,
@@ -179,6 +201,7 @@ export async function geminiChat(opts: {
             err instanceof Error
               ? err.message
               : "The model response could not be read.",
+          meta: { model, inputChars, outputChars: 0 },
         };
       }
     }
@@ -188,7 +211,7 @@ export async function geminiChat(opts: {
 
     // Auth failures are not model-specific — stop trying
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: lastError, status: res.status };
+      return { ok: false, error: lastError, status: res.status, meta: { model, inputChars, outputChars: 0 } };
     }
 
     // 404 / 400 (model unavailable) or 429 (quota on this model) → try next free model
@@ -196,7 +219,7 @@ export async function geminiChat(opts: {
       continue;
     }
 
-    return { ok: false, error: lastError, status: res.status };
+    return { ok: false, error: lastError, status: res.status, meta: { model, inputChars, outputChars: 0 } };
   }
 
   return { ok: false, error: lastError, status: lastStatus };
@@ -237,6 +260,7 @@ export async function geminiChatWithPdf(opts: {
     },
   };
 
+  const inputChars = (opts.system?.length ?? 0) + (opts.userText?.length ?? 0);
   const headers = {
     "Content-Type": "application/json",
     "x-goog-api-key": opts.apiKey,
@@ -274,8 +298,17 @@ export async function geminiChatWithPdf(opts: {
 
     if (res.ok) {
       try {
-        const text = await parseGenerateBody(res);
-        return { ok: true, text };
+        const { text, finishReason } = await parseGenerateBody(res);
+        return {
+          ok: true,
+          text,
+          meta: {
+            model,
+            finishReason,
+            inputChars,
+            outputChars: text.length,
+          },
+        };
       } catch (err) {
         return {
           ok: false,
@@ -283,6 +316,7 @@ export async function geminiChatWithPdf(opts: {
             err instanceof Error
               ? err.message
               : "The model response could not be read.",
+          meta: { model, inputChars, outputChars: 0 },
         };
       }
     }
@@ -291,14 +325,14 @@ export async function geminiChatWithPdf(opts: {
     lastError = statusError(res.status);
 
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, error: lastError, status: res.status };
+      return { ok: false, error: lastError, status: res.status, meta: { model, inputChars, outputChars: 0 } };
     }
 
     if (res.status === 404 || res.status === 400 || res.status === 429) {
       continue;
     }
 
-    return { ok: false, error: lastError, status: res.status };
+    return { ok: false, error: lastError, status: res.status, meta: { model, inputChars, outputChars: 0 } };
   }
 
   return { ok: false, error: lastError, status: lastStatus };
@@ -318,7 +352,7 @@ export async function verifyGeminiKey(apiKey: string): Promise<ChatResult> {
   if (!res.ok) {
     return { ok: false, error: statusError(res.status), status: res.status };
   }
-  return { ok: true, text: "ok" };
+  return { ok: true, text: "ok", meta: { model: "list", inputChars: 0, outputChars: 2 } };
 }
 
 export function parseJsonObject(text: string): unknown {
@@ -327,4 +361,13 @@ export function parseJsonObject(text: string): unknown {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "");
   return JSON.parse(fenced);
+}
+
+export function formatChatLog(label: string, result: ChatResult, extra?: string): string {
+  if (!result.ok) {
+    const m = result.meta;
+    return `[${label}] FAIL model=${m?.model ?? "?"} finish=${m?.finishReason ?? "-"} in=${m?.inputChars ?? "?"} out=${m?.outputChars ?? 0} err=${result.error}${extra ? " | " + extra : ""}`;
+  }
+  const m = result.meta;
+  return `[${label}] OK model=${m.model} finish=${m.finishReason ?? "-"} in=${m.inputChars} out=${m.outputChars}${extra ? " | " + extra : ""}`;
 }
