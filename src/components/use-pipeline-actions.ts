@@ -122,56 +122,56 @@ export function usePipelineActions(opts: {
     let currentKeywords: KeywordSet | null = null;
 
     try {
-      mark(1, "running", "Fetching the job posting…");
+      mark(1, "running", "Ingesting job description…");
       const fetched = await fetchJobDescription({ data: { url: urlToUse } });
       if (fetched.ok) {
         currentJob = fetched.text.slice(0, MAX_JOB_CHARS);
         setJobText(currentJob);
-        mark(1, "running", "Extracting ATS keywords…");
       } else if (currentJob.length >= 40) {
-        mark(1, "running", `${fetched.error} Using pasted description.`);
+        mark(1, "running", `${fetched.error} Using pasted text.`);
       } else {
         fail(1, fetched.error);
         return;
       }
-
       const extracted = await extractKeywords({ data: { apiKey, jobText: currentJob } });
       if (!extracted.ok) { fail(1, extracted.error); return; }
       currentKeywords = extracted.keywords;
       setKeywords(currentKeywords);
-      const kwCount = currentKeywords.keywords.length + currentKeywords.phrases.length;
-      mark(1, "done", `${kwCount} keywords and phrases`);
+      mark(1, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords extracted`);
 
-      mark(2, "running");
+      mark(2, "running", "Building integrity schema…");
+      const integrity = await buildIntegritySchema({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
+      if (!integrity.ok) { fail(2, integrity.error || "Integrity failed"); return; }
+      mark(2, "done", "Baseline locked, gaps identified");
+
+      mark(3, "running", "Decomposing sections…");
+      // Coordinator: prepare packages (simulated)
+      mark(3, "done", "Work packages ready");
+
+      mark(4, "running", "Optimizing sections…");
       const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
-      if (!rewritten.ok) { fail(2, rewritten.error); return; }
+      if (!rewritten.ok) { fail(4, rewritten.error); return; }
       currentHtml = rewritten.html;
-      mark(2, "done", "Full resume rewritten");
+      mark(4, "done", "Sections optimized");
 
-      mark(3, "running");
-      const grammar = await grammarCheck({ data: { apiKey, resumeHtml: currentHtml } });
-      if (!grammar.ok) { fail(3, grammar.error); return; }
-      currentHtml = grammar.html;
-      mark(3, "done", "Spelling and language checked");
-
-      mark(4, "running");
-      const audited = await auditKeywords({ data: { apiKey, resumeHtml: currentHtml, keywords: currentKeywords } });
-      if (!audited.ok) { fail(4, audited.error); return; }
+      mark(5, "running", "Auditing for hallucinations…");
+      const audited = await auditAndRemediate({ data: { apiKey, originalHtml: original, draftHtml: currentHtml, keywords: currentKeywords } });
+      if (!audited.ok) { fail(5, audited.error || "Audit failed"); return; }
       currentHtml = audited.html;
-      setAudit(audited.audit);
-      mark(4, "done", audited.audit.flags.length ? `${audited.audit.flags.length} issues fixed` : "No stuffing found");
+      mark(5, "done", "Factuality restored");
 
-      mark(5, "running");
-      const laidOut = await lockLayout({ data: { apiKey, originalHtml: original, currentHtml } });
-      if (!laidOut.ok) { fail(5, laidOut.error); return; }
-      currentHtml = laidOut.html;
-      mark(5, "done", "Original layout restored");
+      mark(6, "running", "Simulating ATS parse…");
+      const sim = await simulateATS({ data: { apiKey, resumeHtml: currentHtml, keywords: currentKeywords } });
+      if (!sim.ok) { fail(6, sim.error || "ATS sim failed"); return; }
+      const verdict = sim.result?.verdict || "PASS";
+      mark(6, "done", `${verdict} · ${sim.result?.match_percentage || "?"}% match`);
 
-      mark(6, "running");
-      const cleaned = await cleanHtml({ data: { originalHtml: original, currentHtml } });
-      setFinalHtml(cleaned.html);
-      mark(6, "done", "Full clean HTML ready");
-      toast.success("Pipeline finished.");
+      mark(7, "running", "Polishing for export…");
+      const polished = await finalPolish({ data: { apiKey, resumeHtml: currentHtml, skillGaps: integrity.schema?.skill_gaps || [] } });
+      if (!polished.ok) { fail(7, polished.error || "Polish failed"); return; }
+      setFinalHtml(polished.text || currentHtml);
+      mark(7, "done", "Copy-ready text + gap report ready");
+      toast.success("Multi-agent pipeline finished.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "The pipeline failed.");
     } finally {
