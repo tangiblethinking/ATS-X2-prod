@@ -433,8 +433,11 @@ export const finalPolish = createServerFn({ method: "POST" })
       user: `ROLE: Final Polish & Export Manager.
 Clean the resume text below into a single-column, copy-ready plain text resume.
 - Keep all factual content.
+- Preserve line breaks: put each section header, job title, and bullet on its own line.
+- Use blank lines between major sections.
+- Prefix bullets with "- ".
 - Remove any leftover tags, markdown fences, or visual clutter.
-- Append a short "Skill Gap Summary" section at the end.
+- Append a short "Skill Gap Summary" section at the end (also with line breaks).
 
 RESUME TEXT:
 ${plain}
@@ -442,6 +445,20 @@ ${plain}
 SKILL GAPS: ${(data.skillGaps || []).map((g) => typeof g === "string" ? g : String((g as any).term || (g as any).keyword || (g as any).skill || JSON.stringify(g))).join(", ") || "none"}`,
     });
     if (!result.ok) return result;
-    const text = stripMarkdownFences(result.text);
-    return { ok: true as const, text };
+    const cleaned = stripMarkdownFences(result.text)
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .trim();
+
+    // Wrap in minimal HTML so the preview iframe preserves line breaks
+    const escaped = cleaned
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">");
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;padding:24px;font-family:ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.45;color:#111;}
+pre{white-space:pre-wrap;word-wrap:break-word;margin:0;font-family:inherit;}
+</style></head><body><pre>${escaped}</pre></body></html>`;
+    return { ok: true as const, text: html };
   });
