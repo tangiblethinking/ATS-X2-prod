@@ -411,7 +411,7 @@ export const simulateATS = createServerFn({ method: "POST" })
   });
 
 export const finalPolish = createServerFn({ method: "POST" })
-  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, skillGaps: z.array(z.string()).optional() }))
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, skillGaps: z.array(z.union([z.string(), z.record(z.string(), z.unknown())])).optional() }))
   .handler(async ({ data }) => {
     // Strip tags locally so the model only cleans wording + adds the gap report
     const plain = data.resumeHtml
@@ -439,7 +439,7 @@ Clean the resume text below into a single-column, copy-ready plain text resume.
 RESUME TEXT:
 ${plain}
 
-SKILL GAPS: ${(data.skillGaps || []).join(", ") || "none"}`,
+SKILL GAPS: ${(data.skillGaps || []).map((g) => typeof g === "string" ? g : String((g as any).term || (g as any).keyword || (g as any).skill || JSON.stringify(g))).join(", ") || "none"}`,
     });
     if (!result.ok) return result;
     const text = stripMarkdownFences(result.text);
