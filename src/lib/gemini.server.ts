@@ -140,17 +140,22 @@ export async function geminiChat(opts: {
       continue;
     }
 
-    // Retry once on 5xx for this model
-    if (!res.ok && res.status >= 500) {
-      try {
-        res = await fetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(payload),
-        });
-      } catch {
-        lastError = "Could not reach the model service.";
-        continue;
+    // Retry with backoff on 5xx or 429 (free-tier overload / rate limit)
+    const retryable = !res.ok && (res.status >= 500 || res.status === 429);
+    if (retryable) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        await new Promise((r) => setTimeout(r, 1200 * attempt));
+        try {
+          res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+          });
+          if (res.ok) break;
+          if (res.status < 500 && res.status !== 429) break;
+        } catch {
+          lastError = "Could not reach the model service.";
+        }
       }
     }
 

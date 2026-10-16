@@ -71,6 +71,8 @@ export function usePipelineActions(opts: {
     toast.error(message);
   }, [mark]);
 
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   const toastBusy = useCallback(() => {
     toast.message("Please wait", {
       description: "A task is still running. Finish it before starting a new one.",
@@ -119,6 +121,7 @@ export function usePipelineActions(opts: {
       setKeywords(currentKeywords);
       mark(1, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords extracted`);
 
+      await delay(1500);
       mark(2, "running", "Building integrity schema…");
       const integrity = await buildIntegritySchema({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
       if (!integrity.ok) { fail(2, integrity.error || "Integrity failed"); return; }
@@ -128,18 +131,21 @@ export function usePipelineActions(opts: {
       // Coordinator: prepare packages (simulated)
       mark(3, "done", "Work packages ready");
 
+      await delay(1200);
       mark(4, "running", "Optimizing sections…");
       const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
       if (!rewritten.ok) { fail(4, rewritten.error); return; }
       currentHtml = rewritten.html;
       mark(4, "done", "Sections optimized");
 
+      await delay(1200);
       mark(5, "running", "Auditing for hallucinations…");
       const audited = await auditAndRemediate({ data: { apiKey, originalHtml: original, draftHtml: currentHtml, keywords: currentKeywords } });
       if (!audited.ok) { fail(5, audited.error || "Audit failed"); return; }
       currentHtml = audited.html;
       mark(5, "done", "Factuality restored");
 
+      await delay(1000);
       mark(6, "running", "Simulating ATS parse…");
       const sim = await simulateATS({ data: { apiKey, resumeHtml: currentHtml, keywords: currentKeywords } });
       if (!sim.ok) { fail(6, sim.error || "ATS sim failed"); return; }
