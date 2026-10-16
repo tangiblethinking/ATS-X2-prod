@@ -152,22 +152,14 @@ export function usePipelineActions(opts: {
       const verdict = sim.result?.verdict || "PASS";
       mark(6, "done", `${verdict} · ${sim.result?.match_percentage || "?"}% match`);
 
-      mark(7, "running", "Polishing for export…");
-      const rawGaps = integrity.schema?.skill_gaps;
-      const skillGaps: string[] = Array.isArray(rawGaps)
-        ? rawGaps.map((g: unknown) => {
-            if (typeof g === "string") return g;
-            if (g && typeof g === "object") {
-              const o = g as Record<string, unknown>;
-              return String(o.term || o.keyword || o.skill || o.name || JSON.stringify(g));
-            }
-            return String(g ?? "");
-          }).filter(Boolean)
-        : [];
-      const polished = await finalPolish({ data: { apiKey, resumeHtml: currentHtml, skillGaps } });
-      if (!polished.ok) { fail(7, polished.error || "Polish failed"); return; }
-      setFinalHtml(polished.text || currentHtml);
-      mark(7, "done", "Copy-ready text + gap report ready");
+      mark(7, "running", "Restoring original HTML layout…");
+      const locked = await lockLayout({ data: { apiKey, originalHtml: original, currentHtml } });
+      if (!locked.ok) { fail(7, locked.error); return; }
+      currentHtml = locked.html;
+
+      const cleaned = await cleanHtml({ data: { originalHtml: original, currentHtml } });
+      setFinalHtml(cleaned.html);
+      mark(7, "done", "Original layout restored");
       toast.success("Multi-agent pipeline finished.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "The pipeline failed.");

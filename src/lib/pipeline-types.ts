@@ -38,8 +38,8 @@ export const PIPELINE_STEPS = [
   {
     id: 7,
     key: "polish",
-    title: "Final Polish & Export Manager",
-    blurb: "Clean single-column copy-ready text + skill gap telemetry report.",
+    title: "Layout Lock & Export",
+    blurb: "Restore original HTML structure, classes, and styles with optimized text.",
   },
 ] as const;
 
