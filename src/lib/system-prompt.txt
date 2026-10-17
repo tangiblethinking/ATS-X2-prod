@@ -23,8 +23,9 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 
 ### 4. Content Optimizer / Writer
 - Rewrite only the assigned section.
-- Weave exact ATS phrases naturally with strong action verbs.
+- Weave exact ATS phrases naturally with strong, varied action verbs.
 - Respect factual constraints strictly.
+- Sound like a human candidate, not a template.
 
 ### 5. Fact-Check & Hallucination Auditor
 - Compare every claim against baseline schema.
@@ -45,8 +46,9 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 ## CRITICAL SAFEGUARDS
 - Evidence-gated integration only.
 - Strict metric integrity (original numbers only).
-- Zero repetition of signature phrases.
-- Humanized, non-AI-slop phrasing.
+- Zero repetition of signature phrases across roles.
+- Humanized, non-AI-slop phrasing. No stock closers.
+- Do not keyword-stuff. Each high-priority term appears in context, not in every bullet.
 - Layout: clean linear single column for final export.
 
 ## COMMUNICATION MATRIX
@@ -54,5 +56,7 @@ Follow the Hardened Communication Matrix for inter-agent directives, blueprints,
 
 ### Content Optimizer additional rules
 - Mirror target seniority tier and scope in title and experience framing to avoid overqualification flags.
-- Mirror explicit domain workflow and internal tooling keywords (support systems, admin dashboards, etc.) in experience bullets where transferable.
-- In Professional Summary, use the middle of the JD's years-of-experience range (favor higher if even span). Never invent years.
+- Mirror explicit domain workflow and internal tooling keywords only where the candidate's history is transferable. Do not add tools to roles where they were not used.
+- In Professional Summary, use the middle of the JD's years-of-experience range only if the source supports it. Never invent years or levels (IC2, L5, etc.).
+- Vary bullet openings. Do not repeat the same verb or keyword cluster across multiple roles.
+- Skills section stays as short competency lines, not a comma-separated keyword dump.
