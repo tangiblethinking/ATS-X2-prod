@@ -11,11 +11,19 @@ export type TextSlot = { id: string; text: string };
 const TEXT_BETWEEN_TAGS = />([^<]+)</g;
 const HREF_OR_SRC = /\b(href|src)=(["'])(.*?)\2/gi;
 
+/** Turn a bare domain into an absolute URL so the browser does not resolve it against the app origin. */
+export function absolutizeUrl(value: string): string {
+  const v = value.trim();
+  if (!v) return value;
+  if (/^(https?:|mailto:|tel:|#|\/\/)/i.test(v)) return value;
+  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}([\/?#].*)?$/i.test(v)) return `https://${v}`;
+  return value;
+}
+
 export function extractTextSlots(html: string): { template: string; slots: TextSlot[] } {
   const slots: TextSlot[] = [];
   let i = 0;
   const template = html.replace(TEXT_BETWEEN_TAGS, (full, text: string) => {
-    // Skip pure whitespace and very short fragments (punctuation, single chars)
     if (!text.trim() || text.trim().length < 2) return full;
     const id = `t${i++}`;
     slots.push({ id, text });
@@ -32,11 +40,11 @@ export function injectTextSlots(template: string, rewritten: TextSlot[]): string
   });
 }
 
-/** Force every href and src in the result back to the original document. */
+/** Force every href and src back to the original, then absolutize bare domains. */
 export function restoreOriginalUrls(originalHtml: string, resultHtml: string): string {
   const originals: string[] = [];
   originalHtml.replace(HREF_OR_SRC, (_full, _attr, _quote, value) => {
-    originals.push(value);
+    originals.push(absolutizeUrl(value));
     return _full;
   });
   if (originals.length === 0) return resultHtml;
@@ -68,7 +76,6 @@ export function parseRewrittenSlots(raw: unknown, original: TextSlot[]): TextSlo
     if (id && text.trim()) byId.set(id, text);
   }
 
-  // Fall back to original text for any slot the model omitted or emptied
   return original.map((s) => ({
     id: s.id,
     text: byId.get(s.id) ?? s.text,
