@@ -56,6 +56,22 @@ export function restoreOriginalUrls(originalHtml: string, resultHtml: string): s
   });
 }
 
+/**
+ * Deterministic cleanup so AI tells cannot survive the model:
+ * - drop placeholder tokens (X+ years, [X], {{...}})
+ * - unwrap <strong> around metrics so bold is not a repeating pattern
+ */
+export function humanizeOutput(html: string): string {
+  let out = html;
+  out = out.replace(/\bX\+\s*years?\b/gi, "");
+  out = out.replace(/\[[A-Za-z0-9_+\s]{1,20}\]/g, "");
+  out = out.replace(/\{\{[^}]+\}\}/g, "");
+  out = out.replace(/<(strong|b)>([^<]*\d+[^<]*)<\/\1>/gi, "$2");
+  out = out.replace(/\s{2,}/g, " ");
+  out = out.replace(/\s+([.,;:])/g, "$1");
+  return out;
+}
+
 /** Parse model JSON that is expected to be { slots: [{ id, text }] } or a raw array. */
 export function parseRewrittenSlots(raw: unknown, original: TextSlot[]): TextSlot[] {
   let list: unknown[] = [];
