@@ -9,6 +9,7 @@
 export type TextSlot = { id: string; text: string };
 
 const TEXT_BETWEEN_TAGS = />([^<]+)</g;
+const HREF_OR_SRC = /\b(href|src)=(["'])(.*?)\2/gi;
 
 export function extractTextSlots(html: string): { template: string; slots: TextSlot[] } {
   const slots: TextSlot[] = [];
@@ -28,6 +29,22 @@ export function injectTextSlots(template: string, rewritten: TextSlot[]): string
   return template.replace(/\{\{(t\d+)\}\}/g, (full, id: string) => {
     const next = byId.get(id);
     return next != null && next.trim().length > 0 ? next : full;
+  });
+}
+
+/** Force every href and src in the result back to the original document. */
+export function restoreOriginalUrls(originalHtml: string, resultHtml: string): string {
+  const originals: string[] = [];
+  originalHtml.replace(HREF_OR_SRC, (_full, _attr, _quote, value) => {
+    originals.push(value);
+    return _full;
+  });
+  if (originals.length === 0) return resultHtml;
+  let i = 0;
+  return resultHtml.replace(HREF_OR_SRC, (full, attr, quote) => {
+    if (i >= originals.length) return full;
+    const value = originals[i++];
+    return `${attr}=${quote}${value}${quote}`;
   });
 }
 
