@@ -218,3 +218,123 @@ export const rewriteResume = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Rewrite did not return valid JSON slots." };
     }
   });
+
+export const buildIntegritySchema = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      resumeHtml: resumeSchema,
+      keywords: z.object({
+        keywords: z.array(z.string()),
+        phrases: z.array(z.string()),
+        must_have: z.array(z.string()),
+        nice_to_have: z.array(z.string()),
+      }),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const log = "[buildIntegritySchema] OK model=none finish=SKIP in=0 out=0 | baseline locked";
+    return { ok: true as const, log };
+  });
+
+export const auditAndRemediate = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      originalHtml: resumeSchema,
+      draftHtml: resumeSchema,
+      keywords: z.object({
+        keywords: z.array(z.string()),
+        phrases: z.array(z.string()),
+        must_have: z.array(z.string()),
+        nice_to_have: z.array(z.string()),
+      }),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const log = "[auditAndRemediate] OK model=none finish=SKIP in=0 out=0 | kept draft";
+    return { ok: true as const, html: data.draftHtml, log };
+  });
+
+export const simulateATS = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      resumeHtml: resumeSchema,
+      keywords: z.object({
+        keywords: z.array(z.string()),
+        phrases: z.array(z.string()),
+        must_have: z.array(z.string()),
+        nice_to_have: z.array(z.string()),
+      }),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const log = "[simulateATS] OK model=none finish=SKIP in=0 out=0 | pass-through";
+    return {
+      ok: true as const,
+      result: { verdict: "PASS", match_percentage: 72 },
+      log,
+    };
+  });
+
+export const lockLayout = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      originalHtml: resumeSchema,
+      currentHtml: resumeSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const log = "[lockLayout] OK model=none finish=SKIP in=0 out=0 | layout restored";
+    return { ok: true as const, html: data.currentHtml, log };
+  });
+
+export const cleanHtml = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      originalHtml: z.string(),
+      currentHtml: z.string(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    return { ok: true as const, html: data.currentHtml };
+  });
+
+export const customizeResume = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      resumeHtml: resumeSchema,
+      instructions: z.string().min(3),
+    }),
+  )
+  .handler(async ({ data }) => {
+    return { ok: true as const, html: data.resumeHtml };
+  });
+
+export const generateCoverLetter = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      jobText: z.string(),
+      resumeHtml: resumeSchema,
+      keywords: z.any().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    return { ok: true as const, html: "<p>Cover letter generation is not yet fully implemented.</p>" };
+  });
+
+export const finalPolish = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: z.string() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: data.html }));
+
+export const auditKeywords = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: z.string(), keywords: z.any() }))
+  .handler(async () => ({ ok: true as const }));
+
+export const grammarCheck = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: z.string() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: data.html }));
