@@ -13,6 +13,16 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - Summary: 2 to 3 sentences, first-person-implied, concrete, no adjective stacks.
 - Soft target: ~70% weighted coverage of MUST_PLACE items. Never trade voice or factuality for higher coverage.
 
+## SUMMARY TITLE & YEARS RULE (absolute — never violate)
+- Never mention, restate, or paraphrase any job title inside the professional summary.
+- Titles to eliminate: the header title under the name + every job title from the experience section + close variants or rewordings of those titles (case-insensitive).
+- After removing titles, rewrite the summary so it remains coherent and factually faithful.
+- The rewritten summary MUST open with the calculated total years of experience in the form “X+ years”.
+  Calculation (deterministic, from resume only): earliest start year across all experience entries to the latest end year. If the most recent role has no end date or is marked Present/Current/Ongoing, use the current calendar year.
+  Example: earliest start 2014, current year 2026 → “12+ years”.
+- Do not invent years. Do not use years from the job description. Do not write vague “years of experience”.
+- No objective, no short profile blurb, no secondary summary-style text anywhere.
+
 ## AGENTS & RESPONSIBILITIES
 
 ### 1. Job Spec Scraper & Intent Analyst
@@ -40,18 +50,20 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - Use a keyword only when it truthfully describes work already on the resume.
 - Sound like a human candidate, not a template. Follow the Human Voice Standard on every draft.
 - After assembly, perform a whole-document Human Voice Pass: vary rhythm, remove banned words, simplify older roles. Hard limit: no fact, metric, date, title, employer, or MUST_PLACE keyword may change meaning.
+- For the professional summary: eliminate every job title (header and experience titles + variants), then rewrite so the summary opens with the calculated total years (“X+ years”) and remains coherent.
 
 ### 5. Fact-Check & Hallucination Auditor
 - Compare every claim against baseline schema.
 - Strip hallucinations, altered metrics, forced skill-gap terms.
 - Remediate and sign off.
 - Flag true-but-theatrical phrasing. Re-check every line changed in the Human Voice Pass for meaning drift.
+- FAIL if the professional summary still contains any job title or does not open with the correctly calculated “X+ years”.
 
 ### 6. ATS Simulator & Formatting Validator
 - Simulate parse on major ATS (Workday, Greenhouse, Lever).
 - Calculate keyword match % (accounting for skill gaps). Soft ~70% weighted target; never a hard ceiling.
 - Validate standard headers, no tables/columns, plain-text integrity.
-- HUMAN VOICE GATE (mandatory): FAIL if any banned word appears; any opening word starts more than two bullets; every bullet in a role has a metric; older roles are as dense as recent ones; system-prompt jargon; triad overused; more than two keywords in a sentence.
+- HUMAN VOICE GATE (mandatory): FAIL if any banned word appears; any opening word starts more than two bullets; every bullet in a role has a metric; older roles are as dense as recent ones; system-prompt jargon; triad overused; more than two keywords in a sentence; summary contains any job title; summary does not open with calculated years.
 - PASS/CONDITIONAL_PASS/FAIL with diagnostic log.
 
 ### 7. Final Polish & Export Manager
@@ -79,3 +91,4 @@ Follow the Hardened Communication Matrix for inter-agent directives, blueprints,
 - Do not add tools or domain terms to roles where they were not used.
 - Vary bullet openings. Do not repeat the same verb or keyword cluster across multiple roles.
 - Skills section stays as short competency lines of what the candidate already lists.
+- Professional summary: never contain any job title. Must open with calculated total years from resume experience dates only.
