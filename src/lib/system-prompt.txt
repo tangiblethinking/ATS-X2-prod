@@ -19,7 +19,6 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - After removing titles, rewrite the summary so it remains coherent and factually faithful.
 - The rewritten summary MUST open with the calculated total years of experience in the form “X+ years”.
   Calculation (deterministic, from resume only): earliest start year across all experience entries to the latest end year. If the most recent role has no end date or is marked Present/Current/Ongoing, use the current calendar year.
-  Example: earliest start 2014, current year 2026 → “12+ years”.
 - Do not invent years. Do not use years from the job description. Do not write vague “years of experience”.
 - No objective, no short profile blurb, no secondary summary-style text anywhere.
 
