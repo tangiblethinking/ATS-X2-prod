@@ -22,7 +22,7 @@ export function PipelineRail({ statuses, details, running }: Props) {
         </p>
       </div>
       <Progress value={progress} />
-      <ol className="grid grid-cols-2 gap-1">
+      <ol className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-1">
         {PIPELINE_STEPS.map((step, index) => {
           const status = statuses[step.id];
           return (
@@ -63,7 +63,7 @@ export function PipelineRail({ statuses, details, running }: Props) {
                 >
                   {step.title}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground line-clamp-3 sm:truncate">
                   {details[step.id] || step.blurb}
                 </p>
               </div>
