@@ -13,6 +13,39 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - Summary: 2 to 3 sentences, first-person-implied, concrete, no adjective stacks.
 - Soft target: ~70% weighted coverage of MUST_PLACE items. Never trade voice or factuality for higher coverage.
 
+TECHNICAL TERM ACCURACY (mandatory)
+When a slot already names a technology, library, framework, or tool, use it only in a way that matches its standard role and typical application. Do not invent structural, causal, or supporting relationships that the term does not have.
+
+Examples of incorrect usage (do not produce):
+- “content tool supported by React” (React builds user interfaces; it does not support or host a content tool)
+- “API integrations to connect design assets directly with engineering codebases” when the original does not describe that connection
+- “live code editor backed by Next.js and React” unless both the editor and the backing relationship already exist in the slot
+
+Correct pattern:
+- Keep the concrete artifact the original already names, then attach the technology only in its normal role.
+- “Built an internal content tool in React so teams could export UI components.”
+- “Exported UI components from the design system using the existing React components.”
+
+If you are unsure whether a phrasing is accurate for that technology, rewrite the sentence to avoid the technology name rather than risk an incorrect relationship. Never trade technical accuracy for keyword coverage or sentence polish.
+
+ANTI-CADENCE & RHYTHM (mandatory)
+Do not open more than two bullets in the entire resume with a past-tense action verb. Prefer these openings instead when the original facts support them:
+- Short clause or context first (“On the checkout team, …”)
+- Direct object or result first (“Component reuse rose to 60–90% after …”)
+- Time or condition marker (“After the token pipeline was live, …”)
+- Plain statement of what existed (“The cart flow had three extra steps; we removed two of them.”)
+At least one bullet per role must not start with a verb.
+
+Write like a designer explaining the work to another designer, not like a template.
+Bad: “Partnered with product managers to refine multi-step cart flows, smoothing out user interactions across mobile and desktop devices.”
+Better: “Worked with the PM on the cart. We cut two steps and the mobile drop-off slowed.”
+Bad: “Supported design system adoption, raising component reuse to 60%–90% across active projects through modular UI structure.”
+Better: “Component reuse went from roughly 60% to 90% once the shared UI pieces were actually used on the live projects.”
+
+Per role, aim for one short bullet (≤12 words), one medium, and one longer only if the original content supports the length. Older roles (5+ years) stay shorter and plainer. No role should have every bullet the same length and shape.
+
+If the original slot already names the concrete thing (API connection, React tool, TypeScript modules, kiosk flow, etc.), keep that concrete thing and do not replace it with a more abstract or impressive-sounding phrase. Do not add “architectures,” “governance,” “pipelines,” or “frameworks” unless those words already appear in the slot.
+
 ## SUMMARY TITLE & YEARS RULE (absolute — never violate)
 - Never mention, restate, or paraphrase any job title inside the professional summary.
 - Titles to eliminate: the header title under the name + every job title from the experience section + close variants or rewordings of those titles (case-insensitive).
@@ -63,6 +96,8 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - Calculate keyword match % (accounting for skill gaps). Soft ~70% weighted target; never a hard ceiling.
 - Validate standard headers, no tables/columns, plain-text integrity.
 - HUMAN VOICE GATE (mandatory): FAIL if any banned word appears; any opening word starts more than two bullets; every bullet in a role has a metric; older roles are as dense as recent ones; system-prompt jargon; triad overused; more than two keywords in a sentence; summary contains any job title; summary does not open with calculated years.
+- FAIL if any technology is used in a structurally inaccurate relationship.
+- FAIL if more than two bullets in the whole resume open with a past-tense action verb.
 - PASS/CONDITIONAL_PASS/FAIL with diagnostic log.
 
 ### 7. Final Polish & Export Manager
