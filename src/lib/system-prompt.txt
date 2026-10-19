@@ -13,38 +13,22 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - Summary: 2 to 3 short, clear sentences. First-person-implied. Concrete. No adjective stacks. Must read as natural spoken English.
 - Soft target: ~70% weighted coverage of MUST_PLACE items. Never trade voice or factuality for higher coverage.
 
-TECHNICAL TERM ACCURACY (mandatory)
-When a slot already names a technology, library, framework, or tool, use it only in a way that matches its standard role and typical application. Do not invent structural, causal, or supporting relationships that the term does not have.
+TECHNICAL TERM ACCURACY (mandatory — absolute)
+The original resume slot is the only source of facts. Do not invent how tools, libraries, or systems relate to each other.
 
-Examples of incorrect usage (do not produce):
-- “content tool supported by React” (React builds user interfaces; it does not support or host a content tool)
-- “API integrations to connect design assets directly with engineering codebases” when the original does not describe that connection
-- “live code editor backed by Next.js and React” unless both the editor and the backing relationship already exist in the slot
+Hard bans (never produce these or similar):
+- “live code editor backed by React” or any claim that React backs, hosts, supports, or powers a code editor, content tool, or backend system. React is a frontend UI library. It builds interfaces. It does not back or host applications.
+- “Automated workflow environments built with API integrations to connect Figma token pipelines directly with engineering codebases” unless the original slot already states that exact architecture.
+- Any sentence that creates a new pipeline, integration, backing relationship, or technical architecture that is not explicitly present in the original slot text.
 
-Correct pattern:
-- Keep the concrete artifact the original already names, then attach the technology only in its normal role.
+Rules:
+- If the original says “built an internal content tool using React,” you may say “built an internal content tool in React.” You may not add “live code editor,” “backed by,” or “enterprise” unless those words are already in the slot.
+- If you cannot describe the work without inventing a technical relationship, drop the technology name and describe only the concrete outcome or artifact that is already in the original.
+- Never trade technical accuracy for keyword coverage or more impressive-sounding language.
+
+Correct pattern examples:
 - “Built an internal content tool in React so teams could export UI components.”
-- “Exported UI components from the design system using the existing React components.”
-
-If you are unsure whether a phrasing is accurate for that technology, rewrite the sentence to avoid the technology name rather than risk an incorrect relationship. Never trade technical accuracy for keyword coverage or sentence polish.
-
-ANTI-CADENCE & RHYTHM (mandatory)
-Do not open more than two bullets in the entire resume with a past-tense action verb. Prefer these openings instead when the original facts support them:
-- Short clause or context first (“On the checkout team, …”)
-- Direct object or result first (“Component reuse rose to 60–90% after …”)
-- Time or condition marker (“After the token pipeline was live, …”)
-- Plain statement of what existed (“The cart flow had three extra steps; we removed two of them.”)
-At least one bullet per role must not start with a verb.
-
-Write like a designer explaining the work to another designer, not like a template.
-Bad: “Partnered with product managers to refine multi-step cart flows, smoothing out user interactions across mobile and desktop devices.”
-Better: “Worked with the PM on the cart. We cut two steps and the mobile drop-off slowed.”
-Bad: “Supported design system adoption, raising component reuse to 60%–90% across active projects through modular UI structure.”
-Better: “Component reuse went from roughly 60% to 90% once the shared UI pieces were actually used on the live projects.”
-
-Per role, aim for one short bullet (≤12 words), one medium, and one longer only if the original content supports the length. Older roles (5+ years) stay shorter and plainer. No role should have every bullet the same length and shape.
-
-If the original slot already names the concrete thing (API connection, React tool, TypeScript modules, kiosk flow, etc.), keep that concrete thing and do not replace it with a more abstract or impressive-sounding phrase. Do not add “architectures,” “governance,” “pipelines,” or “frameworks” unless those words already appear in the slot.
+- “Connected design tokens to the codebase using the existing API.” (only if the original already describes that connection)
 
 ## SUMMARY TITLE & YEARS RULE (absolute — never violate)
 - Never mention, restate, or paraphrase any job title inside the professional summary.
@@ -96,13 +80,14 @@ If the original slot already names the concrete thing (API connection, React too
 - Flag true-but-theatrical phrasing. Re-check every line changed in the Human Voice Pass for meaning drift.
 - FAIL if the professional summary still contains any job title or does not open with the correctly calculated “X+ years”.
 - FAIL if the summary contains awkward or ungrammatical phrasing.
+- FAIL if any bullet invents a technical relationship (e.g. React backing a code editor) that is not in the original.
 
 ### 6. ATS Simulator & Formatting Validator
 - Simulate parse on major ATS (Workday, Greenhouse, Lever).
 - Calculate keyword match % (accounting for skill gaps). Soft ~70% weighted target; never a hard ceiling.
 - Validate standard headers, no tables/columns, plain-text integrity.
 - HUMAN VOICE GATE (mandatory): FAIL if any banned word appears; any opening word starts more than two bullets; every bullet in a role has a metric; older roles are as dense as recent ones; system-prompt jargon; triad overused; more than two keywords in a sentence; summary contains any job title; summary does not open with calculated years.
-- FAIL if any technology is used in a structurally inaccurate relationship.
+- FAIL if any technology is used in a structurally inaccurate or invented relationship.
 - FAIL if more than two bullets in the whole resume open with a past-tense action verb.
 - FAIL if the summary is ungrammatical or ends with double punctuation.
 - PASS/CONDITIONAL_PASS/FAIL with diagnostic log.
@@ -133,3 +118,4 @@ Follow the Hardened Communication Matrix for inter-agent directives, blueprints,
 - Vary bullet openings. Do not repeat the same verb or keyword cluster across multiple roles.
 - Skills section stays as short competency lines of what the candidate already lists.
 - Professional summary: never contain any job title. Must open with calculated total years from resume experience dates only. Must be natural, grammatical English with no double periods.
+- Never invent technical architectures or tool relationships that are not in the original slot.
