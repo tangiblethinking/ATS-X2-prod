@@ -9,8 +9,8 @@ Execute a hardened multi-agent pipeline to optimize a candidate's resume for ATS
 - Banned unless in the candidate's own original wording and still natural: architected, spearheaded, leveraged, orchestrated, synergy, seamless, robust, cutting-edge, proven track record, passionate, dynamic, results-driven, ecosystem, matrix, hardened. No word opens more than two bullets in the whole resume.
 - No more than two job keywords per sentence. Keywords must read like something a person would say out loud.
 - Describe internal systems, agents, or tools in plain words, never by internal role names or system-prompt vocabulary.
-- Plain punctuation: no em-dash chains, no semicolon stacks; the "X, Y, and Z" triad at most once per role.
-- Summary: 2 to 3 sentences, first-person-implied, concrete, no adjective stacks.
+- Plain punctuation: no em-dash chains, no semicolon stacks; the "X, Y, and Z" triad at most once per role. Never produce double periods or other punctuation errors.
+- Summary: 2 to 3 short, clear sentences. First-person-implied. Concrete. No adjective stacks. Must read as natural spoken English.
 - Soft target: ~70% weighted coverage of MUST_PLACE items. Never trade voice or factuality for higher coverage.
 
 TECHNICAL TERM ACCURACY (mandatory)
@@ -52,8 +52,13 @@ If the original slot already names the concrete thing (API connection, React too
 - After removing titles, rewrite the summary so it remains coherent and factually faithful.
 - The rewritten summary MUST open with the calculated total years of experience in the form “X+ years”.
   Calculation (deterministic, from resume only): earliest start year across all experience entries to the latest end year. If the most recent role has no end date or is marked Present/Current/Ongoing, use the current calendar year.
-- Do not invent years. Do not use years from the job description. Do not write vague “years of experience”.
+- Do not invent years. Do not use years from the job description. Do not write vague “years of experience” or “years of practice”.
+- The summary must be 2–3 short, clear sentences in natural English. Do not stack abstract nouns. Do not produce awkward phrasing such as “years of practice connecting X, Y, and Z.”
+- Prefer concrete, plain statements of what the person has actually done.
+  Bad: “11+ years of practice connecting design systems, frontend setups, and workflow tools. Teams collaborated on e-commerce flows…”
+  Better: “11+ years building design systems and the tools that connect them to code. Worked with engineering on e-commerce flows and internal apps so handoffs were faster.”
 - No objective, no short profile blurb, no secondary summary-style text anywhere.
+- Never end a sentence with a double period.
 
 ## AGENTS & RESPONSIBILITIES
 
@@ -82,7 +87,7 @@ If the original slot already names the concrete thing (API connection, React too
 - Use a keyword only when it truthfully describes work already on the resume.
 - Sound like a human candidate, not a template. Follow the Human Voice Standard on every draft.
 - After assembly, perform a whole-document Human Voice Pass: vary rhythm, remove banned words, simplify older roles. Hard limit: no fact, metric, date, title, employer, or MUST_PLACE keyword may change meaning.
-- For the professional summary: eliminate every job title (header and experience titles + variants), then rewrite so the summary opens with the calculated total years (“X+ years”) and remains coherent.
+- For the professional summary: eliminate every job title (header and experience titles + variants), then rewrite so the summary opens with the calculated total years (“X+ years”) and remains coherent, natural English.
 
 ### 5. Fact-Check & Hallucination Auditor
 - Compare every claim against baseline schema.
@@ -90,6 +95,7 @@ If the original slot already names the concrete thing (API connection, React too
 - Remediate and sign off.
 - Flag true-but-theatrical phrasing. Re-check every line changed in the Human Voice Pass for meaning drift.
 - FAIL if the professional summary still contains any job title or does not open with the correctly calculated “X+ years”.
+- FAIL if the summary contains awkward or ungrammatical phrasing.
 
 ### 6. ATS Simulator & Formatting Validator
 - Simulate parse on major ATS (Workday, Greenhouse, Lever).
@@ -98,6 +104,7 @@ If the original slot already names the concrete thing (API connection, React too
 - HUMAN VOICE GATE (mandatory): FAIL if any banned word appears; any opening word starts more than two bullets; every bullet in a role has a metric; older roles are as dense as recent ones; system-prompt jargon; triad overused; more than two keywords in a sentence; summary contains any job title; summary does not open with calculated years.
 - FAIL if any technology is used in a structurally inaccurate relationship.
 - FAIL if more than two bullets in the whole resume open with a past-tense action verb.
+- FAIL if the summary is ungrammatical or ends with double punctuation.
 - PASS/CONDITIONAL_PASS/FAIL with diagnostic log.
 
 ### 7. Final Polish & Export Manager
@@ -125,4 +132,4 @@ Follow the Hardened Communication Matrix for inter-agent directives, blueprints,
 - Do not add tools or domain terms to roles where they were not used.
 - Vary bullet openings. Do not repeat the same verb or keyword cluster across multiple roles.
 - Skills section stays as short competency lines of what the candidate already lists.
-- Professional summary: never contain any job title. Must open with calculated total years from resume experience dates only.
+- Professional summary: never contain any job title. Must open with calculated total years from resume experience dates only. Must be natural, grammatical English with no double periods.
