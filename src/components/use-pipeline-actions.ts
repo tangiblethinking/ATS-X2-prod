@@ -16,6 +16,7 @@ import {
   grammarCheck,
   lockLayout,
   rewriteResume,
+  grammarAndNaturalEnglish,
 } from "@/lib/optimize";
 import type { JobResult } from "@/lib/job-search";
 import {
@@ -137,7 +138,6 @@ export function usePipelineActions(opts: {
       mark(2, "done", "Baseline locked, gaps identified");
 
       mark(3, "running", "Decomposing sections…");
-      // Coordinator: prepare packages (simulated)
       mark(3, "done", "Work packages ready");
 
       await delay(1200);
@@ -149,12 +149,18 @@ export function usePipelineActions(opts: {
       mark(4, "done", "Sections optimized");
 
       await delay(1200);
-      mark(5, "running", "Auditing for hallucinations…");
+      mark(5, "running", "Checking terminology…");
       const audited = await auditAndRemediate({ data: { apiKey, originalHtml: original, draftHtml: currentHtml, keywords: currentKeywords } });
       addLog((audited as any).log);
       if (!audited.ok) { fail(5, audited.error || "Audit failed"); return; }
       currentHtml = audited.html;
-      mark(5, "done", "Factuality restored");
+      mark(5, "done", "Terminology checked");
+
+      await delay(600);
+      const gram = await grammarAndNaturalEnglish({ data: { apiKey, html: currentHtml } });
+      addLog((gram as any).log);
+      if (gram.ok && (gram as any).html) currentHtml = (gram as any).html;
+      mark(5, "done", "Human English applied");
 
       await delay(1000);
       mark(6, "running", "Simulating ATS parse…");
