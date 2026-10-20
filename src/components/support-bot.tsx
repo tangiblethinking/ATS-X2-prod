@@ -159,7 +159,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
           <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
             <div className="flex items-center gap-2">
               <img
-                src="/mascot/mascot-still.png"
+                src="/mascot/mascot-animated.webp"
                 alt=""
                 className="size-10 object-contain sm:size-12"
                 aria-hidden
