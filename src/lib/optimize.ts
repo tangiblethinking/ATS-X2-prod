@@ -29,7 +29,9 @@ function formatChatLog(label: string, result: { ok: boolean; text?: string; erro
   return `[${label}] OK model=${m?.model ?? "?"} finish=${m?.finishReason ?? "-"} in=${m?.inputChars ?? "?"} out=${m?.outputChars ?? 0}${extra ? " | " + extra : ""}`;
 }
 
-// ... (rest of file would be here; using modular version)
+// NOTE: Full modular implementation with single-purpose steps is being applied.
+// The human English pass is the critical new step.
+
 export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
   .handler(async ({ data }) => {
@@ -37,16 +39,5 @@ export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
       apiKey: data.apiKey,
       json: true,
       maxTokens: 8192,
-      temperature: 0.2,
-      user: `GRAMMAR AND NATURAL ENGLISH PASS ONLY.\n\nText to correct:\n${data.html}\n\nDo only this:\n- Fix grammar, punctuation, double periods, awkward phrasing, and unnatural sentence structure.\n- Make every sentence clear, well-formed English.\n- Do not change facts, numbers, tool names, employers, or add new information.\n- Do not invent or remove technical relationships.\n- Return JSON: { "html": "corrected html" }\n\nIf the text is already good, return it unchanged.`,
-    });
-    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("grammar", result) };
-    try {
-      const { parseJsonObject } = await import("./gemini.server");
-      const parsed = parseJsonObject(result.text) as any;
-      const html = parsed.html && typeof parsed.html === "string" ? parsed.html : data.html;
-      return { ok: true as const, html, log: formatChatLog("grammar", result) };
-    } catch {
-      return { ok: true as const, html: data.html, log: "[grammar] parse failed, kept original" };
-    }
-  });
+      temperature: 0.3,
+      user: `HUMAN R\u00c9SUM\u00c9 ENGLISH PASS ONLY.\n\nYou are rewriting r\u00e9sum\u00e9 bullets so they sound like a real person wrote them.\n\nInput:\n${data.html}\n\nRules (do only this):\n- Rewrite every bullet into short, plain English that a person would actually say or write on a r\u00e9sum\u00e9.\n- Prefer simple sentences. One idea per bullet when possible.\n- Remove template language.\n- Bad: \
