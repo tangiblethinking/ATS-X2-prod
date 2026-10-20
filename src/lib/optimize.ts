@@ -424,35 +424,30 @@ export const generateCoverLetter = createServerFn({ method: "POST" })
       apiKey: apiKeySchema,
       jobText: z.string().trim().min(40).max(MAX_JOB_CHARS),
       resumeHtml: resumeSchema,
-      keywords: z.any().optional(),
+      keywords: z
+        .object({
+          keywords: z.array(z.string()),
+          phrases: z.array(z.string()),
+          must_have: z.array(z.string()),
+          nice_to_have: z.array(z.string()),
+        })
+        .optional(),
     }),
   )
   .handler(async ({ data }) => {
-    const { geminiChat } = await import("./gemini.server");
-    const keywordsText = data.keywords ? JSON.stringify(data.keywords, null, 2) : "none provided";
-    const result = await geminiChat({
+    const mustHave = data.keywords?.must_have?.filter(Boolean).join(", ") ?? "";
+    const phrases = data.keywords?.phrases?.filter(Boolean).join(", ") ?? "";
+    const keywords = data.keywords?.keywords?.filter(Boolean).join(", ") ?? "";
+    const result = await chat({
       apiKey: data.apiKey,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert professional cover letter writer. Generate a concise, natural, ATS-friendly cover letter as clean HTML. Use ONLY facts, experiences, and achievements present in the provided resume HTML. Never invent employers, titles, dates, metrics, tools, or accomplishments. Structure with a greeting, 2–3 short paragraphs (why this role and company using JD language naturally, 1–2 specific relevant achievements from the resume, a clear call to action), and a professional closing. Prefer plain, human language. Avoid banned buzzwords. Keep under 400 words. Return ONLY the full HTML document (or a self-contained <div class=\"cover-letter\"> with <p> elements). No markdown fences, no commentary.",
-        },
-        {
-          role: "user",
-          content: `Write a tailored cover letter.\n\nJOB DESCRIPTION:\n${data.jobText}\n\nRESUME HTML (facts source only):\n${data.resumeHtml}\n\nOPTIONAL KEYWORDS (use only if truthful and natural):\n${keywordsText}\n\nReturn ONLY the HTML.`,
-        },
-      ],
-      maxTokens: 4000,
+      maxTokens: 4096,
       temperature: 0.35,
+      user: `Write a professional cover letter as a complete, self-contained HTML document.\n\nRequirements:\n- Align tightly with the job description and the rewritten resume below.\n- Stay 100% truthful to the resume; do not invent employers, titles, metrics, or skills.\n- 3–4 short paragraphs plus a brief greeting and closing.\n- Natural, confident tone; weave in high-priority keywords where they fit without stuffing.\n- Return ONLY full HTML (include <!DOCTYPE html>, <html>, <head> with basic print-friendly styles, and follow the heading layout style of the resume HTML <body>). No markdown fences, no commentary.\n- Simple clean typography suitable for print (letter size, readable margins).\n- Match the visual branding and layout style of the resume HTML as closely as possible so the two documents look consistently branded (same fonts, colors, heading styles, margins, header treatment if present).\n\nMUST_HAVE (if any):\n${mustHave || "(none)"}\n\nPHRASES (if any):\n${phrases || "(none)"}\n\nKEYWORDS (if any):\n${keywords || "(none)"}\n\nJOB DESCRIPTION:\n${data.jobText}\n\nALIGNED RESUME HTML (source of truth for candidate facts and layout style):\n${data.resumeHtml}`,
     });
     if (!result.ok) return result;
-    let html = stripMarkdownFences(result.text).trim();
+    const html = stripMarkdownFences(result.text);
     if (html.length < 80) {
-      return { ok: false as const, error: "Cover letter generation returned too little content." };
-    }
-    if (!/<html|<div|<p/i.test(html)) {
-      html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cover Letter</title></head><body><div class="cover-letter">${html}</div></body></html>`;
+      return { ok: false as const, error: "Cover letter generation returned almost no HTML." };
     }
     return { ok: true as const, html: sanitizeHtml(html) };
   });
