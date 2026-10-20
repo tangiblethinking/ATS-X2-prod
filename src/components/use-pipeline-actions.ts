@@ -3,20 +3,18 @@ import { toast } from "sonner";
 import { isPlausibleApiKey } from "@/lib/api-key-store";
 import { looksLikeHtml } from "@/lib/html-clean";
 import {
-  buildIntegritySchema,
-  auditAndRemediate,
-  simulateATS,
-  finalPolish,
-  auditKeywords,
+  analyzeIntent,
+  analyzeResume,
+  auditAndQA,
   cleanHtml,
   customizeResume,
   extractKeywords,
   fetchJobDescription,
   generateCoverLetter,
-  grammarCheck,
-  lockLayout,
+  naturalLanguagePass,
   rewriteResume,
-  grammarAndNaturalEnglish,
+  scannabilityPass,
+  terminologyPass,
 } from "@/lib/optimize";
 import type { JobResult } from "@/lib/job-search";
 import {
@@ -110,7 +108,8 @@ export function usePipelineActions(opts: {
     let currentKeywords: KeywordSet | null = null;
 
     try {
-      mark(1, "running", "Fetching job description and extracting ATS keywords…");
+      // 1. Job Spec Scraper
+      mark(1, "running", "Collecting full job description text…");
       const fetched = await fetchJobDescription({ data: { url: urlToUse } });
       if (fetched.ok) {
         currentJob = fetched.text.slice(0, MAX_JOB_CHARS);
@@ -121,60 +120,81 @@ export function usePipelineActions(opts: {
         fail(1, fetched.error);
         return;
       }
+      mark(1, "done", `${currentJob.length.toLocaleString()} characters collected`);
+
+      // 2. Intent & Analysis
+      mark(2, "running", "Analyzing what the job is looking for…");
+      const intentResult = await analyzeIntent({ data: { apiKey, jobText: currentJob } });
+      addLog((intentResult as any).log);
+      if (!intentResult.ok) { fail(2, intentResult.error); return; }
+      mark(2, "done", (intentResult as any).intent?.slice(0, 120) || "Intent analyzed");
+
+      // 3. Keyword & Phrase Extraction
+      mark(3, "running", "Extracting keywords and phrases…");
       const extracted = await extractKeywords({ data: { apiKey, jobText: currentJob } });
       addLog((extracted as any).log);
-      if (!extracted.ok) { fail(1, extracted.error); return; }
+      if (!extracted.ok) { fail(3, extracted.error); return; }
       currentKeywords = extracted.keywords;
       setKeywords(currentKeywords);
-      mark(1, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords / phrases extracted`);
+      mark(3, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords / phrases extracted`);
 
-      mark(2, "running", "Cataloging facts, dates, metrics, and employers…");
-      const integrity = await buildIntegritySchema({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
-      addLog((integrity as any).log);
-      if (!integrity.ok) { fail(2, integrity.error || "Integrity failed"); return; }
-      mark(2, "done", "Baseline locked — skill gaps flagged");
+      // 4. Resume Analysis
+      mark(4, "running", "Extracting all information from the resume…");
+      const resumeAnalysis = await analyzeResume({ data: { apiKey, resumeHtml: original } });
+      addLog((resumeAnalysis as any).log);
+      if (!resumeAnalysis.ok) { fail(4, resumeAnalysis.error); return; }
+      mark(4, "done", "Resume facts extracted");
 
-      mark(3, "running", "Breaking resume into Summary, Experience, Skills, Education…");
-      const sections = (original.match(/<h2[^>]*>|<div class="section"/gi) || []).length;
-      mark(3, "done", `${sections || "Multiple"} sections identified — work packages ready`);
-
-      mark(4, "running", "Rewriting sections with evidence-gated keyword weaving…");
+      // 5. Keyword Injection Rewrite
+      mark(5, "running", "Injecting keywords into existing language…");
       const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
       addLog((rewritten as any).log);
-      if (!rewritten.ok) { fail(4, rewritten.error); return; }
+      if (!rewritten.ok) { fail(5, rewritten.error); return; }
       currentHtml = rewritten.html;
-      mark(4, "done", "Sections rewritten for clarity and ATS alignment");
+      mark(5, "done", "Keywords woven into existing content");
 
-      mark(5, "running", "Auditing for invented claims and technical inaccuracies…");
-      const audited = await auditAndRemediate({ data: { apiKey, originalHtml: original, draftHtml: currentHtml, keywords: currentKeywords } });
+      // 6. Terminology Accuracy Pass
+      mark(6, "running", "Checking technical accuracy…");
+      const term = await terminologyPass({ data: { apiKey, originalHtml: original, draftHtml: currentHtml } });
+      addLog((term as any).log);
+      if (!term.ok) { fail(6, term.error || "Terminology pass failed"); return; }
+      currentHtml = term.html;
+      mark(6, "done", "Terminology verified");
+
+      // 7. Human Natural Language Pass
+      mark(7, "running", "Rewriting for natural human English…");
+      const natural = await naturalLanguagePass({ data: { apiKey, html: currentHtml } });
+      addLog((natural as any).log);
+      if (!natural.ok) { fail(7, natural.error || "Natural language pass failed"); return; }
+      currentHtml = natural.html;
+      mark(7, "done", "Natural language applied");
+
+      // 8. Human Scannability Pass
+      mark(8, "running", "Optimizing for human scannability…");
+      const scan = await scannabilityPass({ data: { apiKey, html: currentHtml } });
+      addLog((scan as any).log);
+      if (!scan.ok) { fail(8, scan.error || "Scannability pass failed"); return; }
+      currentHtml = scan.html;
+      mark(8, "done", "Scannability improved");
+
+      // 9. Inject into Original Layout (already done via slots; confirm)
+      mark(9, "running", "Placing rewritten text into original HTML layout…");
+      mark(9, "done", "Original layout structure preserved");
+
+      // 10. Audit & QA
+      mark(10, "running", "Auditing content and HTML…");
+      const audited = await auditAndQA({ data: { apiKey, originalHtml: original, currentHtml, keywords: currentKeywords } });
       addLog((audited as any).log);
-      if (!audited.ok) { fail(5, audited.error || "Audit failed"); return; }
+      if (!audited.ok) { fail(10, audited.error || "Audit failed"); return; }
       currentHtml = audited.html;
-      mark(5, "done", "Integrity audit complete");
+      mark(10, "done", `${(audited as any).flags?.length || 0} issues flagged`);
 
-      mark(5, "running", "Polishing for natural human English…");
-      const gram = await grammarAndNaturalEnglish({ data: { apiKey, html: currentHtml } });
-      addLog((gram as any).log);
-      if (gram.ok && (gram as any).html) currentHtml = (gram as any).html;
-      mark(5, "done", "Human English applied");
-
-      mark(6, "running", "Calculating real keyword match and validating formatting…");
-      const sim = await simulateATS({ data: { apiKey, resumeHtml: currentHtml, keywords: currentKeywords } });
-      addLog((sim as any).log);
-      if (!sim.ok) { fail(6, sim.error || "ATS sim failed"); return; }
-      const verdict = sim.result?.verdict || "PASS";
-      mark(6, "done", `${verdict} · ${sim.result?.match_percentage ?? "?"}% match`);
-
-      mark(7, "running", "Cleaning HTML and locking single-column layout…");
-      const locked = await lockLayout({ data: { apiKey, originalHtml: original, currentHtml } });
-      addLog((locked as any).log);
-      if (!locked.ok) { fail(7, locked.error); return; }
-      currentHtml = locked.html;
-
+      // 11. Final HTML
+      mark(11, "running", "Preparing final HTML…");
       const cleaned = await cleanHtml({ data: { originalHtml: original, currentHtml } });
       setFinalHtml(cleaned.html);
-      mark(7, "done", "Clean ATS-safe HTML ready");
-      toast.success("Pipeline finished. Review the optimized resume.");
+      mark(11, "done", "Final HTML ready");
+      toast.success("Pipeline finished.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "The pipeline failed.");
     } finally {

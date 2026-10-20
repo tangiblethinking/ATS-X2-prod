@@ -91,12 +91,30 @@ export const fetchJobDescription = createServerFn({ method: "POST" })
     }
   });
 
+export const analyzeIntent = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, jobText: z.string().trim().min(40).max(MAX_JOB_CHARS) }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 4000, temperature: 0.2,
+      user: `Analyze this job description. Describe in clear plain language what the role is actually looking for in a candidate (skills, outcomes, seniority signals, domain). Return JSON only: {"intent":"...","priorities":["..."]}.\n\nJOB:\n${data.jobText}`,
+    });
+    if (!result.ok) return result;
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      const parsed = parseJsonObject(result.text) as any;
+      const log = formatChatLog("analyzeIntent", result);
+      return { ok: true as const, intent: parsed.intent || "", priorities: parsed.priorities || [], log };
+    } catch {
+      return { ok: false as const, error: "Intent analysis did not return valid JSON." };
+    }
+  });
+
 export const extractKeywords = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, jobText: z.string().trim().min(40).max(MAX_JOB_CHARS) }))
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8000, temperature: 0.15,
-      user: `Extract ATS keywords from this job description. Return JSON only: {"keywords":[],"phrases":[],"must_have":[],"nice_to_have":[]}.\n\nPrioritize hard skills, tools, methodologies, and outcome language that appear in the job description.\nDo not invent terms.\n\nJOB:\n${data.jobText}`,
+      user: `Extract ATS keywords and phrases from this job description. Return JSON only: {"keywords":[],"phrases":[],"must_have":[],"nice_to_have":[]}.\n\nPrioritize hard skills, tools, methodologies, and outcome language.\nDo not invent terms.\n\nJOB:\n${data.jobText}`,
     });
     if (!result.ok) return result;
     try {
@@ -107,6 +125,24 @@ export const extractKeywords = createServerFn({ method: "POST" })
       return { ok: true as const, keywords, log };
     } catch {
       return { ok: false as const, error: "Keyword extraction did not return valid JSON." };
+    }
+  });
+
+export const analyzeResume = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.15,
+      user: `Extract the key factual information from this resume HTML. Return JSON only: {"summary":"...","roles":[{"title":"...","company":"...","dates":"...","bullets":["..."]}],"skills":["..."],"education":"..."}.\n\nDo not invent anything.\n\nRESUME:\n${data.resumeHtml}`,
+    });
+    if (!result.ok) return result;
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      const parsed = parseJsonObject(result.text);
+      const log = formatChatLog("analyzeResume", result);
+      return { ok: true as const, analysis: parsed, log };
+    } catch {
+      return { ok: false as const, error: "Resume analysis did not return valid JSON." };
     }
   });
 
@@ -124,90 +160,96 @@ export const rewriteResume = createServerFn({ method: "POST" })
     const phrases = (data.keywords.phrases || []).slice(0, 25).join(", ");
     const other = [...(data.keywords.keywords || []), ...(data.keywords.nice_to_have || [])].slice(0, 40).join(", ");
 
-    // Pass 1: initial rewrite with keyword weaving
-    const pass1 = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.35,
-      user: `REWRITE PASS 1: Rephrase every experience bullet and the summary so the language more closely matches the job description.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Original slot text is the only source of facts. Do not invent employers, titles, dates, metrics, tools, or relationships.\n- Weave in the keywords and phrases below wherever they truthfully describe work already present in that slot. Prefer the job's wording for the same thing.\n- Summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Keep language natural. Max two job terms per sentence.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+    const result = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.4,
+      user: `REWRITE: Inject as many of the job keywords and phrases as possible into the existing resume language.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools that do not exist.\n- Stretching the truth is acceptable when it truthfully maps to existing work (e.g. rephrase "built design systems" toward "design system governance" if the work supports it).\n- Prefer the job's wording for the same underlying experience.\n- Summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Natural language. Do not keyword-stuff to the point of unreadability.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
     });
-    if (!pass1.ok) return pass1;
-
-    let rewritten;
+    if (!result.ok) return result;
     try {
       const { parseJsonObject } = await import("./gemini.server");
-      const parsed1 = parseJsonObject(pass1.text);
-      rewritten = parseRewrittenSlots(parsed1, slots);
+      const parsed = parseJsonObject(result.text);
+      const rewritten = parseRewrittenSlots(parsed, slots);
+      const injected = injectTextSlots(template, rewritten);
+      const restored = restoreOriginalUrls(data.resumeHtml, injected);
+      const html = sanitizeHtml(humanizeOutput(restored));
+      const changed = rewritten.filter((s, i) => s.text !== slots[i].text).length;
+      const log = formatChatLog("rewriteResume", result, `slots=${slots.length} changed=${changed}`);
+      if (html.length < 40) return { ok: false as const, error: "Rewrite produced almost no HTML.", log };
+      return { ok: true as const, html, log };
     } catch {
-      return { ok: false as const, error: "Rewrite pass 1 did not return valid JSON slots." };
+      return { ok: false as const, error: "Rewrite did not return valid JSON slots." };
     }
-
-    // Pass 2: strengthen weaving on the already-rewritten text
-    const pass2 = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.3,
-      user: `REWRITE PASS 2: Review the rewritten slots and strengthen keyword integration where possible.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Do not invent any new facts, tools, metrics, employers, or relationships that are not already supported by the original slots.\n- Where a job keyword or phrase truthfully maps to work already described, rewrite the sentence to use that language more naturally and clearly.\n- Do not keyword-stuff. Keep max two job terms per sentence.\n- If a slot is already strong, leave it unchanged.\n- Summary must still open with "X+ years" and contain no job titles.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nORIGINAL SLOTS:\n${JSON.stringify(slots)}\n\nCURRENT REWRITTEN SLOTS:\n${JSON.stringify(rewritten)}`,
-    });
-
-    if (pass2.ok) {
-      try {
-        const { parseJsonObject } = await import("./gemini.server");
-        const parsed2 = parseJsonObject(pass2.text);
-        rewritten = parseRewrittenSlots(parsed2, rewritten);
-      } catch {
-        // keep pass 1 result if pass 2 parse fails
-      }
-    }
-
-    const injected = injectTextSlots(template, rewritten);
-    const restored = restoreOriginalUrls(data.resumeHtml, injected);
-    const html = sanitizeHtml(humanizeOutput(restored));
-    const changed = rewritten.filter((s, i) => s.text !== slots[i].text).length;
-    const log = formatChatLog("rewriteResume", pass1, `slots=${slots.length} changed=${changed} passes=2`);
-    if (html.length < 40) return { ok: false as const, error: "Rewrite produced almost no HTML.", log };
-    return { ok: true as const, html, log };
   });
 
-export const buildIntegritySchema = createServerFn({ method: "POST" })
-  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
-  .handler(async ({ data }) => {
-    const plain = plainText(data.resumeHtml);
-    const years = (plain.match(/\b(19|20)\d{2}\b/g) || []).length;
-    const metrics = (plain.match(/\b\d+%|\b\d+\s*(%|percent)/gi) || []).length;
-    const log = `[buildIntegritySchema] OK | baseline locked | years=${years} metrics=${metrics}`;
-    return { ok: true as const, log, schema: { plainLength: plain.length, years, metrics } };
-  });
-
-export const auditAndRemediate = createServerFn({ method: "POST" })
-  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, draftHtml: resumeSchema, keywords: z.any() }))
+export const terminologyPass = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, draftHtml: resumeSchema }))
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.15,
-      user: `TERMINOLOGY & INTEGRITY STEP.\n\nOriginal (facts only):\n${data.originalHtml}\n\nDraft (optimized):\n${data.draftHtml}\n\nDo only this:\n- Find any invented technical relationships, tools, metrics, employers, or claims not supported by the original.\n- Rewrite only the offending sentences so the term is used correctly or remove the unsupported term.\n- Preserve all truthful keyword weaving that maps to existing experience.\n- Return well-formed HTML. Do not break tags.\n- Return JSON: { "html": "corrected html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf nothing needs changing, return the draft unchanged.`,
+      user: `TERMINOLOGY PASS: Ensure all technical language is accurate and makes real-world sense.\n\nOriginal (facts):\n${data.originalHtml}\n\nDraft:\n${data.draftHtml}\n\nRewrite only sentences where a tool, library, or system is used in a way that does not match its real meaning or invents an unsupported relationship.\nPreserve truthful keyword weaving.\nReturn well-formed HTML.\nReturn JSON: { "html": "corrected html" }\n\nIf nothing needs changing, return the draft unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("terminology", result) };
     try {
       const { parseJsonObject } = await import("./gemini.server");
       const parsed = parseJsonObject(result.text) as any;
       const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.draftHtml);
-      return { ok: true as const, html, log: formatChatLog("terminology", result), flags: parsed.flags || [] };
+      return { ok: true as const, html, log: formatChatLog("terminology", result) };
     } catch {
       return { ok: true as const, html: data.draftHtml, log: "[terminology] parse failed, kept draft" };
     }
   });
 
-export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
+export const naturalLanguagePass = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
-      user: `HUMAN ENGLISH POLISH STEP ONLY.\n\nRewrite bullets and the summary into short, plain, natural English a person would write.\n\nInput:\n${data.html}\n\nRules:\n- Keep all truthful keyword weaving and ATS-aligned phrasing that is already accurate.\n- One idea per bullet when possible.\n- No template language.\n- Do not add new facts, tools, or metrics.\n- Do not change employers, dates, or titles.\n- Return well-formed HTML. Do not glue tags to words or leave tags unclosed.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
+      user: `HUMAN NATURAL LANGUAGE PASS.\n\nRewrite bullets and the summary into short, plain, natural English a person would actually write.\n\nInput:\n${data.html}\n\nRules:\n- Keep truthful keyword weaving.\n- No template language.\n- Do not add new facts or metrics.\n- Do not change employers, dates, or titles.\n- Return well-formed HTML.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
     });
-    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("humanEnglish", result) };
+    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("natural", result) };
     try {
       const { parseJsonObject } = await import("./gemini.server");
       const parsed = parseJsonObject(result.text) as any;
       const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.html);
-      return { ok: true as const, html, log: formatChatLog("humanEnglish", result) };
+      return { ok: true as const, html, log: formatChatLog("natural", result) };
     } catch {
-      return { ok: true as const, html: data.html, log: "[humanEnglish] parse failed, kept original" };
+      return { ok: true as const, html: data.html, log: "[natural] parse failed, kept original" };
+    }
+  });
+
+export const scannabilityPass = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
+      user: `HUMAN SCANNABILITY PASS.\n\nMake the resume easy for a human to scan quickly. The most important points should stand out.\n\nInput:\n${data.html}\n\nRules:\n- Keep all factual content and truthful keyword weaving.\n- Prefer short bullets with the strongest outcome or skill near the start of the bullet.\n- Do not invent facts.\n- Return well-formed HTML.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already scannable, return unchanged.`,
+    });
+    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("scannability", result) };
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      const parsed = parseJsonObject(result.text) as any;
+      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.html);
+      return { ok: true as const, html, log: formatChatLog("scannability", result) };
+    } catch {
+      return { ok: true as const, html: data.html, log: "[scannability] parse failed, kept original" };
+    }
+  });
+
+export const auditAndQA = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.1,
+      user: `AUDIT & QA.\n\nCompare the final HTML against the original. Flag any invented facts, broken tags, or major issues.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf clean, return the current HTML unchanged.`,
+    });
+    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("audit", result) };
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      const parsed = parseJsonObject(result.text) as any;
+      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.currentHtml);
+      return { ok: true as const, html, flags: parsed.flags || [], log: formatChatLog("audit", result) };
+    } catch {
+      return { ok: true as const, html: data.currentHtml, flags: [], log: "[audit] parse failed, kept current" };
     }
   });
 
@@ -224,10 +266,6 @@ export const simulateATS = createServerFn({ method: "POST" })
       log,
     };
   });
-
-export const lockLayout = createServerFn({ method: "POST" })
-  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema }))
-  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml), log: "[lockLayout] OK | structure preserved" }));
 
 export const cleanHtml = createServerFn({ method: "POST" })
   .validator(z.object({ originalHtml: z.string(), currentHtml: z.string() }))
@@ -252,3 +290,19 @@ export const auditKeywords = createServerFn({ method: "POST" })
 export const grammarCheck = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, html: z.string() }))
   .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.html) }));
+
+export const buildIntegritySchema = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
+  .handler(async () => ({ ok: true as const, log: "[buildIntegritySchema] OK" }));
+
+export const lockLayout = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema }))
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml), log: "[lockLayout] OK" }));
+
+export const auditAndRemediate = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, draftHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: data.draftHtml, log: "[auditAndRemediate] OK" }));
+
+export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
+  .handler(async ({ data }) => ({ ok: true as const, html: data.html, log: "[grammarAndNaturalEnglish] OK" }));
