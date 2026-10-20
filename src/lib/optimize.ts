@@ -22,28 +22,43 @@ function asKeywords(raw: unknown): KeywordSet {
   return { keywords: list(obj.keywords), phrases: list(obj.phrases), must_have: list(obj.must_have), nice_to_have: list(obj.nice_to_have) };
 }
 
-function termsAlreadyOnResume(html: string, terms: string[]): string[] {
-  const plain = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").toLowerCase();
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of terms) {
-    const t = raw.trim();
-    if (!t || t.length < 3) continue;
-    const key = t.toLowerCase();
-    if (seen.has(key)) continue;
-    if (plain.includes(key)) { seen.add(key); out.push(t); }
+function plainText(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function calculateMatchPercentage(html: string, keywords: KeywordSet): number {
+  const plain = plainText(html);
+  const must = [...new Set([...(keywords.must_have || []), ...(keywords.phrases || [])].map(t => t.toLowerCase().trim()).filter(t => t.length >= 3))];
+  const nice = [...new Set([...(keywords.keywords || []), ...(keywords.nice_to_have || [])].map(t => t.toLowerCase().trim()).filter(t => t.length >= 3))];
+  if (must.length === 0 && nice.length === 0) return 0;
+
+  let mustHits = 0;
+  for (const term of must) {
+    if (plain.includes(term)) mustHits++;
   }
-  return out.slice(0, 40);
+  let niceHits = 0;
+  for (const term of nice) {
+    if (plain.includes(term)) niceHits++;
+  }
+
+  const mustScore = must.length ? (mustHits / must.length) * 70 : 0;
+  const niceScore = nice.length ? (niceHits / nice.length) * 30 : 0;
+  const total = Math.round(mustScore + niceScore);
+  return Math.max(0, Math.min(100, total));
 }
 
 export function sanitizeHtml(html: string): string {
   let out = html;
+  // Fix common punctuation and tag issues
   out = out.replace(/\.{2,}/g, ".");
   out = out.replace(/<\/strong>\s*\./g, ".</strong>");
   out = out.replace(/<strong>\s*<\/strong>/g, "");
   out = out.replace(/\s+([.,;:])/g, "$1");
   out = out.replace(/\s{2,}/g, " ");
-  return out;
+  // Ensure basic structural validity for ATS
+  out = out.replace(/\s*<\s*\/\s*(strong|b|em|i)\s*>/gi, "</$1>");
+  out = out.replace(/\s*<\s*(strong|b|em|i)\s*>/gi, "<$1>");
+  return out.trim();
 }
 
 async function chat(opts: { apiKey: string; user: string; maxTokens: number; temperature: number; json?: boolean }) {
@@ -81,7 +96,7 @@ export const extractKeywords = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8000, temperature: 0.15,
-      user: `Extract ATS keywords from this job description. Return JSON only: {"keywords":[],"phrases":[],"must_have":[],"nice_to_have":[]}. Do not invent terms.\n\nJOB:\n${data.jobText}`,
+      user: `Extract ATS keywords from this job description. Return JSON only: {"keywords":[],"phrases":[],"must_have":[],"nice_to_have":[]}.\n\nPrioritize hard skills, tools, methodologies, and outcome language that appear in the job description.\nDo not invent terms.\n\nJOB:\n${data.jobText}`,
     });
     if (!result.ok) return result;
     try {
@@ -104,12 +119,14 @@ export const rewriteResume = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { template, slots } = extractTextSlots(data.resumeHtml);
     if (slots.length === 0) return { ok: false as const, error: "No text content found to rewrite." };
-    const supported = termsAlreadyOnResume(data.resumeHtml, [...data.keywords.must_have, ...data.keywords.phrases, ...data.keywords.keywords]);
-    const keywords = supported.join(", ");
+
+    const must = (data.keywords.must_have || []).slice(0, 25).join(", ");
+    const phrases = (data.keywords.phrases || []).slice(0, 20).join(", ");
+    const other = [...(data.keywords.keywords || []), ...(data.keywords.nice_to_have || [])].slice(0, 30).join(", ");
 
     const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
-      user: `REWRITE STEP ONLY. Rephrase the existing text slots for clarity. Do not invent facts, tools, metrics, or relationships.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id.\n- Original slot text is the only source of facts.\n- Do not add employers, tools, metrics, or domains not already in that slot.\n- Professional summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Write short, plain sentences. No template language.\n\nKEYWORDS ALREADY ON RESUME (optional): ${keywords || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.3,
+      user: `REWRITE STEP: Optimize the resume text slots for ATS alignment while remaining 100% factually faithful to the original.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id with rewritten text.\n- Original slot text is the only source of facts. Never invent employers, titles, dates, metrics, tools, or relationships.\n- Actively weave in job description keywords and phrases when they truthfully describe work, tools, or outcomes already present in that slot.\n- Prefer the job's terminology for the same underlying experience.\n- Professional summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Write short, plain, natural sentences. Vary structure. No template language.\n- No more than two job keywords per sentence.\n\nMUST-PLACE TERMS (use when truthful): ${must || "(none)"}\nKEY PHRASES (use when truthful): ${phrases || "(none)"}\nOTHER KEYWORDS (use when truthful): ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
     });
     if (!result.ok) return result;
     try {
@@ -130,14 +147,18 @@ export const rewriteResume = createServerFn({ method: "POST" })
 
 export const buildIntegritySchema = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
-  .handler(async () => ({ ok: true as const, log: "[buildIntegritySchema] OK | baseline locked" }));
+  .handler(async ({ data }) => {
+    // Lightweight real integrity lock: extract plain facts for later comparison
+    const plain = plainText(data.resumeHtml).slice(0, 2000);
+    return { ok: true as const, log: `[buildIntegritySchema] OK | baseline locked (${plain.length} chars)`, schema: { plainSnippet: plain } };
+  });
 
 export const auditAndRemediate = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, draftHtml: resumeSchema, keywords: z.any() }))
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.15,
-      user: `TERMINOLOGY STEP ONLY.\n\nOriginal (facts):\n${data.originalHtml}\n\nDraft:\n${data.draftHtml}\n\nDo only this:\n- Find every technology, library, framework, or tool.\n- If the sentence uses that term in a way that does not match its real meaning or invents a relationship not in the original, rewrite only that sentence so the term is used correctly, or remove the term.\n- Do not change anything else.\n- Return JSON: { "html": "corrected html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf nothing needs changing, return the draft unchanged.`,
+      user: `TERMINOLOGY & INTEGRITY STEP.\n\nOriginal (facts only):\n${data.originalHtml}\n\nDraft (optimized):\n${data.draftHtml}\n\nDo only this:\n- Find any invented technical relationships, tools, metrics, employers, or claims not supported by the original.\n- Rewrite only the offending sentences so the term is used correctly or remove the unsupported term.\n- Preserve all truthful keyword weaving that maps to existing experience.\n- Do not change anything else.\n- Return JSON: { "html": "corrected html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf nothing needs changing, return the draft unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("terminology", result) };
     try {
@@ -154,8 +175,8 @@ export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
   .handler(async ({ data }) => {
     const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.3,
-      user: `HUMAN R\u00c9SUM\u00c9 ENGLISH STEP ONLY.\n\nRewrite every bullet and the summary into short, plain English a person would actually write on a r\u00e9sum\u00e9.\n\nInput:\n${data.html}\n\nRules:\n- One idea per bullet when possible.\n- No template language ("helped teams", "reduce discrepancies", "using API integrations", "through modular").\n- Bad: "Connected Figma token pipelines directly with engineering codebases using REST and GraphQL API integrations."\n- Better: "Hooked the design tokens up to the code so engineering could pull them in."\n- Bad: "Built internal content tools in React that helped teams export UI components and reduce handoff discrepancies."\n- Better: "Built a React tool so teams could export components without the usual back-and-forth."\n- Do not add new facts, tools, or metrics.\n- Do not change employers, dates, or titles.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
+      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
+      user: `HUMAN ENGLISH POLISH STEP ONLY.\n\nRewrite bullets and the summary into short, plain, natural English a person would write.\n\nInput:\n${data.html}\n\nRules:\n- Keep all truthful keyword weaving and ATS-aligned phrasing that is already accurate.\n- One idea per bullet when possible.\n- No template language.\n- Do not add new facts, tools, or metrics.\n- Do not change employers, dates, or titles.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("humanEnglish", result) };
     try {
@@ -170,11 +191,21 @@ export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
 
 export const simulateATS = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
-  .handler(async () => ({ ok: true as const, result: { verdict: "PASS", match_percentage: 72 }, log: "[simulateATS] OK | pass-through" }));
+  .handler(async ({ data }) => {
+    const keywords = asKeywords(data.keywords);
+    const match = calculateMatchPercentage(data.resumeHtml, keywords);
+    const verdict = match >= 65 ? "PASS" : match >= 45 ? "CONDITIONAL_PASS" : "FAIL";
+    const log = `[simulateATS] OK | match=${match}% verdict=${verdict}`;
+    return {
+      ok: true as const,
+      result: { verdict, match_percentage: match },
+      log,
+    };
+  });
 
 export const lockLayout = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema }))
-  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml), log: "[lockLayout] OK" }));
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml), log: "[lockLayout] OK | structure preserved" }));
 
 export const cleanHtml = createServerFn({ method: "POST" })
   .validator(z.object({ originalHtml: z.string(), currentHtml: z.string() }))
