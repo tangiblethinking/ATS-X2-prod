@@ -124,25 +124,45 @@ export const rewriteResume = createServerFn({ method: "POST" })
     const phrases = (data.keywords.phrases || []).slice(0, 25).join(", ");
     const other = [...(data.keywords.keywords || []), ...(data.keywords.nice_to_have || [])].slice(0, 40).join(", ");
 
-    const result = await chat({
+    // Pass 1: initial rewrite with keyword weaving
+    const pass1 = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.35,
-      user: `REWRITE STEP: Rephrase every experience bullet and the summary so the language more closely matches the job description, using the provided keywords and phrases wherever they truthfully describe the same work already in the original text.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules (strict):\n- Return every slot id. Return plain text only — never include HTML tags.\n- The original slot text is the only source of facts. Do not invent employers, job titles, dates, numbers, metrics, tools, technologies, or relationships that are not already present.\n- Actively rewrite existing sentences and bullets to incorporate job-description keywords and phrases when the underlying work, tool, or outcome is already described in that slot. Prefer the job's wording for the same thing.\n- Example of good weaving: original says "built design systems and component libraries" and job wants "design system governance" → rewrite to "built design systems and component libraries with design system governance".\n- Example of bad weaving: original never mentions React, do not add React.\n- Summary must open with calculated "X+ years" and must not contain any job title.\n- Leave names, dates, phones, emails, company names, and link labels unchanged.\n- Keep bullets short and natural. Do not keyword-stuff. Max two job terms per sentence.\n\nMUST-PLACE TERMS (weave when truthful): ${must || "(none)"}\nKEY PHRASES (weave when truthful): ${phrases || "(none)"}\nOTHER KEYWORDS (weave when truthful): ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+      user: `REWRITE PASS 1: Rephrase every experience bullet and the summary so the language more closely matches the job description.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Original slot text is the only source of facts. Do not invent employers, titles, dates, metrics, tools, or relationships.\n- Weave in the keywords and phrases below wherever they truthfully describe work already present in that slot. Prefer the job's wording for the same thing.\n- Summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Keep language natural. Max two job terms per sentence.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
     });
-    if (!result.ok) return result;
+    if (!pass1.ok) return pass1;
+
+    let rewritten;
     try {
       const { parseJsonObject } = await import("./gemini.server");
-      const parsed = parseJsonObject(result.text);
-      const rewritten = parseRewrittenSlots(parsed, slots);
-      const injected = injectTextSlots(template, rewritten);
-      const restored = restoreOriginalUrls(data.resumeHtml, injected);
-      const html = sanitizeHtml(humanizeOutput(restored));
-      const changed = rewritten.filter((s, i) => s.text !== slots[i].text).length;
-      const log = formatChatLog("rewriteResume", result, `slots=${slots.length} changed=${changed}`);
-      if (html.length < 40) return { ok: false as const, error: "Rewrite produced almost no HTML.", log };
-      return { ok: true as const, html, log };
+      const parsed1 = parseJsonObject(pass1.text);
+      rewritten = parseRewrittenSlots(parsed1, slots);
     } catch {
-      return { ok: false as const, error: "Rewrite did not return valid JSON slots." };
+      return { ok: false as const, error: "Rewrite pass 1 did not return valid JSON slots." };
     }
+
+    // Pass 2: strengthen weaving on the already-rewritten text
+    const pass2 = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.3,
+      user: `REWRITE PASS 2: Review the rewritten slots and strengthen keyword integration where possible.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Do not invent any new facts, tools, metrics, employers, or relationships that are not already supported by the original slots.\n- Where a job keyword or phrase truthfully maps to work already described, rewrite the sentence to use that language more naturally and clearly.\n- Do not keyword-stuff. Keep max two job terms per sentence.\n- If a slot is already strong, leave it unchanged.\n- Summary must still open with "X+ years" and contain no job titles.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nORIGINAL SLOTS:\n${JSON.stringify(slots)}\n\nCURRENT REWRITTEN SLOTS:\n${JSON.stringify(rewritten)}`,
+    });
+
+    if (pass2.ok) {
+      try {
+        const { parseJsonObject } = await import("./gemini.server");
+        const parsed2 = parseJsonObject(pass2.text);
+        rewritten = parseRewrittenSlots(parsed2, rewritten);
+      } catch {
+        // keep pass 1 result if pass 2 parse fails
+      }
+    }
+
+    const injected = injectTextSlots(template, rewritten);
+    const restored = restoreOriginalUrls(data.resumeHtml, injected);
+    const html = sanitizeHtml(humanizeOutput(restored));
+    const changed = rewritten.filter((s, i) => s.text !== slots[i].text).length;
+    const log = formatChatLog("rewriteResume", pass1, `slots=${slots.length} changed=${changed} passes=2`);
+    if (html.length < 40) return { ok: false as const, error: "Rewrite produced almost no HTML.", log };
+    return { ok: true as const, html, log };
   });
 
 export const buildIntegritySchema = createServerFn({ method: "POST" })
