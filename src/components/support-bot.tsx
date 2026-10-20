@@ -156,17 +156,20 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
 
       {open && (
         <div className="fixed bottom-4 right-4 z-50 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:w-96">
-          <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+          <header className="flex items-center justify-between gap-2 border-b border-neutral-800 bg-black px-3 py-2">
             <div className="flex items-center gap-2">
-              <img
-                src="/mascot/mascot-animated.webp"
-                alt=""
+              <video
+                src="/mascot/supportbot-mascot-original.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
                 className="size-10 object-contain sm:size-12"
                 aria-hidden
               />
-              <p className="text-sm font-medium">Support</p>
+              <p className="text-sm font-medium text-white">Support</p>
             </div>
-            <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setOpen(false)} aria-label="Minimize">
+            <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-white hover:bg-neutral-800 hover:text-white" onClick={() => setOpen(false)} aria-label="Minimize">
               <X className="size-4" />
             </Button>
           </header>
@@ -215,7 +218,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Paste your Gemini key here…"
-              className="h-9 text-base"
+              className="h-9 text-sm"
               autoComplete="off"
               spellCheck={false}
             />
