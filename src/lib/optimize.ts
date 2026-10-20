@@ -64,6 +64,9 @@ function summaryQualityOk(html: string): { ok: boolean; reason: string } {
   }
 
   if (!/\d+\+\s*years/i.test(summary)) return { ok: false, reason: "summary must open with X+ years" };
+  if (/<strong>[^<]+<\/strong>\s*<strong>/i.test(html) || /<strong>[^<]{0,20}:<\/strong>\s*<strong>/i.test(html)) {
+    return { ok: false, reason: "double or redundant strong tags detected" };
+  }
   return { ok: true, reason: "ok" };
 }
 
@@ -94,6 +97,9 @@ export function sanitizeHtml(html: string): string {
   out = out.replace(/<\/strong>\s*\./g, ".</strong>");
   out = out.replace(/<strong>\s*<\/strong>/g, "");
   out = out.replace(/<b>\s*<\/b>/g, "");
+  // Collapse double/nested strong that create "Label: <strong>Same idea</strong>" redundancy
+  out = out.replace(/<strong>([^<]{1,40}):<\/strong>\s*<strong>([^<]{1,80})<\/strong>/gi, "<strong>$2</strong>");
+  out = out.replace(/<strong>([^<]+)<\/strong>\s*<strong>([^<]+)<\/strong>/gi, "<strong>$1 $2</strong>");
   out = out.replace(/\s{2,}/g, " ");
   return out.trim();
 }
@@ -204,7 +210,7 @@ export const rewriteResume = createServerFn({ method: "POST" })
       attempts++;
       const result = await chat({
         apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.4,
-        user: `REWRITE (attempt ${attempts}): Inject job keywords and phrases into existing resume language. Target 97% coverage, minimum 77%.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools.\n- Stretching the truth is acceptable when it maps to existing work.\n- Summary must open with calculated "X+ years", use present tense only, contain no job titles, and be 2–3 complete sentences that each start with a capital letter.\n- Never start a summary sentence with a lowercase letter or a gerund (no "eliminating...").\n- Leave names, dates, phones, emails, companies unchanged.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+        user: `REWRITE (attempt ${attempts}): Inject job keywords and phrases into existing resume language. Target 97% coverage, minimum 77%.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools.\n- Stretching the truth is acceptable when it maps to existing work.\n- Summary must open with calculated "X+ years", use present tense only, contain no job titles, and be 2–3 complete sentences that each start with a capital letter.\n- Never start a summary sentence with a lowercase letter or a gerund.\n- Leave names, dates, phones, emails, companies unchanged.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
       });
       if (!result.ok) {
         if (attempts === maxAttempts) return result;
@@ -266,7 +272,7 @@ export const naturalLanguagePass = createServerFn({ method: "POST" })
 
       const result = await chat({
         apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
-        user: `HUMAN NATURAL LANGUAGE PASS (attempt ${attempts}) — must pass at 100% modern English rules.\n\nSUMMARY RULES (absolute):\n- 2–3 complete sentences.\n- Every sentence starts with a capital letter.\n- Present tense only. Correct: "Directs cross-functional work. Builds design systems."\n- Never past tense. Never start a sentence with a gerund or lowercase word (no "eliminating handoff friction").\n- Must open with calculated "X+ years".\n- Must not contain any job title (no "leader", "designer", "architect" as a role description).\n- Natural spoken English.\n\nBullets must also be grammatical and natural.\nDo not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}\n\nIssues: ${quality.reason}`,
+        user: `HUMAN NATURAL LANGUAGE PASS (attempt ${attempts}) — must pass at 100% modern English rules.\n\nSUMMARY RULES (absolute):\n- 2–3 complete sentences.\n- Every sentence starts with a capital letter.\n- Present tense only. Correct: "Directs cross-functional work. Builds design systems."\n- Never past tense. Never start a sentence with a gerund or lowercase word.\n- Must open with calculated "X+ years".\n- Must not contain any job title.\n- Natural spoken English. Avoid awkward third-person constructions like "Specializes in".\n\nBULLET RULES:\n- One idea per bullet.\n- Do not create redundant patterns such as "<strong>Accelerated releases:</strong> <strong>Accelerated release timelines</strong>". Use a single short bold phrase at the start only if it adds value, then continue the sentence naturally without repeating the same words.\n- Never nest or double <strong> tags.\n- Grammatical and natural.\n\nDo not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}\n\nIssues: ${quality.reason}`,
       });
       lastLog = formatChatLog("natural", result, `attempt=${attempts}`);
       if (!result.ok) {
@@ -284,7 +290,7 @@ export const naturalLanguagePass = createServerFn({ method: "POST" })
       }
     }
 
-    return { ok: true as const, html: current, log: lastLog || "[natural] completed", attempts };
+    return { ok: true as const, html: sanitizeHtml(current), log: lastLog || "[natural] completed", attempts };
   });
 
 export const scannabilityPass = createServerFn({ method: "POST" })
@@ -307,7 +313,7 @@ export const scannabilityPass = createServerFn({ method: "POST" })
 
       const result = await chat({
         apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
-        user: `HUMAN SCANNABILITY PASS (attempt ${attempts}) — target 97%, minimum 75%.\n\nAdd a short bolded phrase (8–40 characters) at the start of every experience bullet using <strong>. Also bold one key phrase in the summary.\n\nExample bullet: <li><strong>Improved release speed</strong> by supplying coded designs to engineering.</li>\n\nKeep all facts. Keep summary present tense and grammatical. Do not invent anything.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}`,
+        user: `HUMAN SCANNABILITY PASS (attempt ${attempts}) — target 97%, minimum 75%.\n\nAdd one short bolded phrase (8–40 characters) at the start of every experience bullet using a single <strong> tag. Also bold one key phrase in the summary.\n\nCorrect example: <li><strong>Improved release speed</strong> by supplying coded designs to engineering.</li>\n\nIncorrect (do not do this): <li><strong>Accelerated releases:</strong> <strong>Accelerated release timelines</strong> from approval...</li>\n\nNever double or nest <strong> tags. Never repeat the bolded words immediately after the tag.\nKeep all facts. Keep summary present tense and grammatical. Do not invent anything.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}`,
       });
       if (!result.ok) {
         if (attempts === maxAttempts) break;
@@ -324,7 +330,7 @@ export const scannabilityPass = createServerFn({ method: "POST" })
     }
 
     const finalScore = Math.max(bestScore, scannabilityScore(current));
-    return { ok: true as const, html: finalScore >= bestScore ? current : bestHtml, log: `[scannability] OK | score=${finalScore}% attempts=${attempts}`, score: finalScore };
+    return { ok: true as const, html: sanitizeHtml(finalScore >= bestScore ? current : bestHtml), log: `[scannability] OK | score=${finalScore}% attempts=${attempts}`, score: finalScore };
   });
 
 export const auditAndQA = createServerFn({ method: "POST" })
@@ -332,7 +338,7 @@ export const auditAndQA = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.1,
-      user: `AUDIT & QA — must pass at 100%.\n\nCompare final against original. Check for invented facts, broken tags, summary grammar (present tense, capital letters, no titles, no gerund fragments), and overall quality.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }`,
+      user: `AUDIT & QA — must pass at 100%.\n\nCompare final against original. Check for invented facts, broken tags, double/nested <strong> tags, redundant phrasing, summary grammar (present tense, capital letters, no titles, no gerund fragments), and overall quality.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("audit", result) };
     try {
