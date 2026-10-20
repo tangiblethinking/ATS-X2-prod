@@ -49,17 +49,14 @@ function calculateMatchPercentage(html: string, keywords: KeywordSet): number {
 
 export function sanitizeHtml(html: string): string {
   let out = html;
-  // Fix double periods and spacing
   out = out.replace(/\.{2,}/g, ".");
   out = out.replace(/\s+([.,;:])/g, "$1");
   out = out.replace(/\s{2,}/g, " ");
-  // Repair common tag gluing and malformed strong/b/em
   out = out.replace(/([a-zA-Z0-9.,])(<strong>|<b>|<em>|<i>)/gi, "$1 $2");
   out = out.replace(/(<\/strong>|<\/b>|<\/em>|<\/i>)([a-zA-Z0-9])/gi, "$1 $2");
   out = out.replace(/<\/strong>\s*\./g, ".</strong>");
   out = out.replace(/<strong>\s*<\/strong>/g, "");
   out = out.replace(/<b>\s*<\/b>/g, "");
-  // Collapse accidental double spaces created by repairs
   out = out.replace(/\s{2,}/g, " ");
   return out.trim();
 }
@@ -123,13 +120,13 @@ export const rewriteResume = createServerFn({ method: "POST" })
     const { template, slots } = extractTextSlots(data.resumeHtml);
     if (slots.length === 0) return { ok: false as const, error: "No text content found to rewrite." };
 
-    const must = (data.keywords.must_have || []).slice(0, 25).join(", ");
-    const phrases = (data.keywords.phrases || []).slice(0, 20).join(", ");
-    const other = [...(data.keywords.keywords || []), ...(data.keywords.nice_to_have || [])].slice(0, 30).join(", ");
+    const must = (data.keywords.must_have || []).slice(0, 30).join(", ");
+    const phrases = (data.keywords.phrases || []).slice(0, 25).join(", ");
+    const other = [...(data.keywords.keywords || []), ...(data.keywords.nice_to_have || [])].slice(0, 40).join(", ");
 
     const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.3,
-      user: `REWRITE STEP: Optimize the resume text slots for ATS alignment while remaining 100% factually faithful to the original.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id with rewritten text (plain text only — do not include HTML tags).\n- Original slot text is the only source of facts. Never invent employers, titles, dates, metrics, tools, or relationships.\n- Actively weave in job description keywords and phrases when they truthfully describe work, tools, or outcomes already present in that slot.\n- Prefer the job's terminology for the same underlying experience.\n- Professional summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Write short, plain, natural sentences. Vary structure. No template language.\n- No more than two job keywords per sentence.\n\nMUST-PLACE TERMS (use when truthful): ${must || "(none)"}\nKEY PHRASES (use when truthful): ${phrases || "(none)"}\nOTHER KEYWORDS (use when truthful): ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.35,
+      user: `REWRITE STEP: Rephrase every experience bullet and the summary so the language more closely matches the job description, using the provided keywords and phrases wherever they truthfully describe the same work already in the original text.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules (strict):\n- Return every slot id. Return plain text only — never include HTML tags.\n- The original slot text is the only source of facts. Do not invent employers, job titles, dates, numbers, metrics, tools, technologies, or relationships that are not already present.\n- Actively rewrite existing sentences and bullets to incorporate job-description keywords and phrases when the underlying work, tool, or outcome is already described in that slot. Prefer the job's wording for the same thing.\n- Example of good weaving: original says "built design systems and component libraries" and job wants "design system governance" → rewrite to "built design systems and component libraries with design system governance".\n- Example of bad weaving: original never mentions React, do not add React.\n- Summary must open with calculated "X+ years" and must not contain any job title.\n- Leave names, dates, phones, emails, company names, and link labels unchanged.\n- Keep bullets short and natural. Do not keyword-stuff. Max two job terms per sentence.\n\nMUST-PLACE TERMS (weave when truthful): ${must || "(none)"}\nKEY PHRASES (weave when truthful): ${phrases || "(none)"}\nOTHER KEYWORDS (weave when truthful): ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
     });
     if (!result.ok) return result;
     try {
