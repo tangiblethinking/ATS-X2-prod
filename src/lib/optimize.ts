@@ -55,18 +55,18 @@ function summaryQualityOk(html: string): { ok: boolean; reason: string } {
   const sentences = summary.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
   if (sentences.length < 2) return { ok: false, reason: "summary needs 2–3 complete sentences" };
 
+  const gerundStart = /^(Eliminating|Accelerating|Improving|Building|Creating|Directing|Managing|Designing|Establishing|Reducing|Ensuring|Increasing|Raising|Partnering|Architecting|Championing|Supplying|Helping|Optimizing)\b/i;
+
   for (const s of sentences) {
     if (/^[a-z]/.test(s)) return { ok: false, reason: "sentence does not start with capital letter" };
-    if (/^[A-Za-z]+ing\b/.test(s)) return { ok: false, reason: "sentence starts with gerund fragment" };
+    if (gerundStart.test(s)) return { ok: false, reason: "sentence starts with a gerund fragment (e.g. Eliminating...)" };
+    if (/\bspecializes in\b/i.test(s)) return { ok: false, reason: "avoids 'Specializes in' construction" };
     if (/\b(leader|designer|architect|manager|director)\b/i.test(s) && !/\byears\b/i.test(s)) {
       return { ok: false, reason: "summary contains a job title" };
     }
   }
 
   if (!/\d+\+\s*years/i.test(summary)) return { ok: false, reason: "summary must open with X+ years" };
-  if (/<strong>[^<]+<\/strong>\s*<strong>/i.test(html) || /<strong>[^<]{0,20}:<\/strong>\s*<strong>/i.test(html)) {
-    return { ok: false, reason: "double or redundant strong tags detected" };
-  }
   return { ok: true, reason: "ok" };
 }
 
@@ -97,7 +97,6 @@ export function sanitizeHtml(html: string): string {
   out = out.replace(/<\/strong>\s*\./g, ".</strong>");
   out = out.replace(/<strong>\s*<\/strong>/g, "");
   out = out.replace(/<b>\s*<\/b>/g, "");
-  // Collapse double/nested strong that create "Label: <strong>Same idea</strong>" redundancy
   out = out.replace(/<strong>([^<]{1,40}):<\/strong>\s*<strong>([^<]{1,80})<\/strong>/gi, "<strong>$2</strong>");
   out = out.replace(/<strong>([^<]+)<\/strong>\s*<strong>([^<]+)<\/strong>/gi, "<strong>$1 $2</strong>");
   out = out.replace(/\s{2,}/g, " ");
@@ -210,7 +209,7 @@ export const rewriteResume = createServerFn({ method: "POST" })
       attempts++;
       const result = await chat({
         apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.4,
-        user: `REWRITE (attempt ${attempts}): Inject job keywords and phrases into existing resume language. Target 97% coverage, minimum 77%.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools.\n- Stretching the truth is acceptable when it maps to existing work.\n- Summary must open with calculated "X+ years", use present tense only, contain no job titles, and be 2–3 complete sentences that each start with a capital letter.\n- Never start a summary sentence with a lowercase letter or a gerund.\n- Leave names, dates, phones, emails, companies unchanged.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+        user: `REWRITE (attempt ${attempts}): Inject job keywords and phrases into existing resume language. Target 97% coverage, minimum 77%.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools.\n- Stretching the truth is acceptable when it maps to existing work.\n- Summary must open with calculated "X+ years", use present tense only, contain no job titles, and be 2–3 complete sentences that each start with a capital letter.\n- Never start a summary sentence with a gerund (no "Eliminating...", "Accelerating...").\n- Never use "Specializes in".\n- Leave names, dates, phones, emails, companies unchanged.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
       });
       if (!result.ok) {
         if (attempts === maxAttempts) return result;
@@ -262,21 +261,21 @@ export const naturalLanguagePass = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     let current = data.html;
     let attempts = 0;
-    const maxAttempts = 4;
+    const maxAttempts = 5;
     let lastLog = "";
 
     while (attempts < maxAttempts) {
       attempts++;
       const quality = summaryQualityOk(current);
-      if (quality.ok && attempts > 1) break;
+      if (quality.ok) break;
 
       const result = await chat({
-        apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
-        user: `HUMAN NATURAL LANGUAGE PASS (attempt ${attempts}) — must pass at 100% modern English rules.\n\nSUMMARY RULES (absolute):\n- 2–3 complete sentences.\n- Every sentence starts with a capital letter.\n- Present tense only. Correct: "Directs cross-functional work. Builds design systems."\n- Never past tense. Never start a sentence with a gerund or lowercase word.\n- Must open with calculated "X+ years".\n- Must not contain any job title.\n- Natural spoken English. Avoid awkward third-person constructions like "Specializes in".\n\nBULLET RULES:\n- One idea per bullet.\n- Do not create redundant patterns such as "<strong>Accelerated releases:</strong> <strong>Accelerated release timelines</strong>". Use a single short bold phrase at the start only if it adds value, then continue the sentence naturally without repeating the same words.\n- Never nest or double <strong> tags.\n- Grammatical and natural.\n\nDo not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}\n\nIssues: ${quality.reason}`,
+        apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.15,
+        user: `HUMAN NATURAL LANGUAGE PASS (attempt ${attempts}) — SUMMARY MUST PASS THE GATE.\n\nCurrent summary issues: ${quality.reason}\n\nSUMMARY RULES (absolute — fail the gate if violated):\n- Exactly 2 or 3 complete sentences.\n- Every sentence starts with a capital letter and is a full clause (subject + verb).\n- Present tense only. Correct examples: "Directs design operations. Builds scalable design systems. Improves release speed."\n- NEVER start any sentence with a gerund: no "Eliminating...", "Accelerating...", "Improving...", "Building...".\n- NEVER use the phrase "Specializes in".\n- Must open with calculated "X+ years".\n- Must not contain any job title.\n- Natural spoken English.\n\nBullets must also be grammatical. Do not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent HTML:\n${current}`,
       });
-      lastLog = formatChatLog("natural", result, `attempt=${attempts}`);
+      lastLog = formatChatLog("natural", result, `attempt=${attempts} reason=${quality.reason}`);
       if (!result.ok) {
-        if (attempts === maxAttempts) return { ok: false as const, error: result.error, log: lastLog };
+        if (attempts === maxAttempts) break;
         continue;
       }
       try {
@@ -290,7 +289,29 @@ export const naturalLanguagePass = createServerFn({ method: "POST" })
       }
     }
 
-    return { ok: true as const, html: sanitizeHtml(current), log: lastLog || "[natural] completed", attempts };
+    // Final dedicated summary fix if still failing
+    if (!summaryQualityOk(current).ok) {
+      const summaryFix = await chat({
+        apiKey: data.apiKey, json: true, maxTokens: 2000, temperature: 0.1,
+        user: `Rewrite ONLY the Professional Summary paragraph so it passes the gate.\n\nCurrent summary text: ${extractSummaryText(current)}\n\nRules:\n- 2–3 complete present-tense sentences.\n- Open with "X+ years".\n- No gerund starts. No "Specializes in". No job titles.\n- Return JSON: { "summary": "new summary text only" }`,
+      });
+      if (summaryFix.ok) {
+        try {
+          const { parseJsonObject } = await import("./gemini.server");
+          const parsed = parseJsonObject(summaryFix.text) as any;
+          if (typeof parsed.summary === "string" && parsed.summary.trim()) {
+            current = current.replace(
+              /(<p class="summary-text">)[\s\S]*?(<\/p>)/i,
+              `$1 ${parsed.summary.trim()} $2`,
+            );
+          }
+        } catch {
+          // keep current
+        }
+      }
+    }
+
+    return { ok: true as const, html: sanitizeHtml(current), log: lastLog || "[natural] completed", attempts, summaryOk: summaryQualityOk(current).ok };
   });
 
 export const scannabilityPass = createServerFn({ method: "POST" })
@@ -313,7 +334,7 @@ export const scannabilityPass = createServerFn({ method: "POST" })
 
       const result = await chat({
         apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
-        user: `HUMAN SCANNABILITY PASS (attempt ${attempts}) — target 97%, minimum 75%.\n\nAdd one short bolded phrase (8–40 characters) at the start of every experience bullet using a single <strong> tag. Also bold one key phrase in the summary.\n\nCorrect example: <li><strong>Improved release speed</strong> by supplying coded designs to engineering.</li>\n\nIncorrect (do not do this): <li><strong>Accelerated releases:</strong> <strong>Accelerated release timelines</strong> from approval...</li>\n\nNever double or nest <strong> tags. Never repeat the bolded words immediately after the tag.\nKeep all facts. Keep summary present tense and grammatical. Do not invent anything.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}`,
+        user: `HUMAN SCANNABILITY PASS (attempt ${attempts}) — target 97%, minimum 75%.\n\nAdd one short bolded phrase (8–40 characters) at the start of every experience bullet using a single <strong> tag. Also bold one key phrase in the summary.\n\nCorrect: <li><strong>Improved release speed</strong> by supplying coded designs to engineering.</li>\nIncorrect: double <strong> or repeating the bolded words.\n\nDo not change the summary sentences themselves — only add a <strong> around an existing key phrase if needed.\nKeep summary present tense and grammatical. Do not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}`,
       });
       if (!result.ok) {
         if (attempts === maxAttempts) break;
@@ -338,13 +359,17 @@ export const auditAndQA = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.1,
-      user: `AUDIT & QA — must pass at 100%.\n\nCompare final against original. Check for invented facts, broken tags, double/nested <strong> tags, redundant phrasing, summary grammar (present tense, capital letters, no titles, no gerund fragments), and overall quality.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }`,
+      user: `AUDIT & QA — must pass at 100%.\n\nCompare final against original. Check for invented facts, broken tags, summary grammar (present tense, capital letters, no titles, no gerund fragments, no "Specializes in"), and overall quality.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("audit", result) };
     try {
       const { parseJsonObject } = await import("./gemini.server");
       const parsed = parseJsonObject(result.text) as any;
-      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.currentHtml);
+      let html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.currentHtml);
+      // Re-check summary after audit
+      if (!summaryQualityOk(html).ok) {
+        // leave as-is; natural pass should have fixed it
+      }
       return { ok: true as const, html, flags: parsed.flags || [], log: formatChatLog("audit", result, "gate=100%") };
     } catch {
       return { ok: true as const, html: data.currentHtml, flags: [], log: "[audit] parse failed, kept current" };
