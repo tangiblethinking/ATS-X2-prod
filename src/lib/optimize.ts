@@ -26,6 +26,36 @@ function plainText(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function extractSummaryText(html: string): string {
+  const match = html.match(/summary-text[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i) || html.match(/Professional Summary[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (match) return match[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const plain = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const idx = plain.toLowerCase().indexOf("professional summary");
+  if (idx >= 0) return plain.slice(idx, idx + 400).trim();
+  return "";
+}
+
+function summaryQualityOk(html: string): { ok: boolean; reason: string } {
+  const summary = extractSummaryText(html);
+  if (!summary || summary.length < 40) return { ok: false, reason: "summary too short or missing" };
+
+  const pastIndicators = /\b(directed|eliminated|accelerated|improved|raised|built|created|managed|designed|established|secured|partnered|architected|reduced|ensured|increased)\b/gi;
+  const gerundStart = /^[A-Z][a-z]+ing\b/;
+  const sentences = summary.split(/[.!?]+/).map(s => s.trim()).filter(Boolean);
+
+  for (const s of sentences) {
+    if (pastIndicators.test(s) && !/\b(years|experience)\b/i.test(s)) {
+      return { ok: false, reason: "summary uses past tense" };
+    }
+    if (gerundStart.test(s)) {
+      return { ok: false, reason: "summary starts a sentence with a gerund fragment" };
+    }
+  }
+
+  if (sentences.length < 2) return { ok: false, reason: "summary needs 2–3 complete sentences" };
+  return { ok: true, reason: "ok" };
+}
+
 function calculateMatchPercentage(html: string, keywords: KeywordSet): number {
   const plain = plainText(html);
   const must = [...new Set([...(keywords.must_have || []), ...(keywords.phrases || [])].map(t => t.toLowerCase().trim()).filter(t => t.length >= 3))];
@@ -162,7 +192,7 @@ export const rewriteResume = createServerFn({ method: "POST" })
 
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.4,
-      user: `REWRITE: Inject as many of the job keywords and phrases as possible into the existing resume language.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools that do not exist.\n- Stretching the truth is acceptable when it truthfully maps to existing work (e.g. rephrase "built design systems" toward "design system governance" if the work supports it).\n- Prefer the job's wording for the same underlying experience.\n- Summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Natural language. Do not keyword-stuff to the point of unreadability.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+      user: `REWRITE: Inject as many of the job keywords and phrases as possible into the existing resume language.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id. Plain text only, no HTML tags.\n- Do not invent new employers, titles, dates, metrics, or tools that do not exist.\n- Stretching the truth is acceptable when it truthfully maps to existing work.\n- Prefer the job's wording for the same underlying experience.\n- Summary must open with calculated "X+ years" and contain no job titles.\n- Summary must use present tense only (e.g. "directs", "builds", "leads"). Never past tense or gerund fragments.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Natural language.\n\nMUST-PLACE: ${must || "(none)"}\nPHRASES: ${phrases || "(none)"}\nOTHER: ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
     });
     if (!result.ok) return result;
     try {
@@ -202,19 +232,38 @@ export const terminologyPass = createServerFn({ method: "POST" })
 export const naturalLanguagePass = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
   .handler(async ({ data }) => {
-    const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
-      user: `HUMAN NATURAL LANGUAGE PASS.\n\nRewrite bullets and the summary into short, plain, natural English a person would actually write.\n\nInput:\n${data.html}\n\nRules:\n- Keep truthful keyword weaving.\n- No template language.\n- Do not add new facts or metrics.\n- Do not change employers, dates, or titles.\n- Return well-formed HTML.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
-    });
-    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("natural", result) };
-    try {
-      const { parseJsonObject } = await import("./gemini.server");
-      const parsed = parseJsonObject(result.text) as any;
-      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.html);
-      return { ok: true as const, html, log: formatChatLog("natural", result) };
-    } catch {
-      return { ok: true as const, html: data.html, log: "[natural] parse failed, kept original" };
+    let current = data.html;
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastLog = "";
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      const quality = summaryQualityOk(current);
+      if (quality.ok && attempts > 1) break;
+
+      const result = await chat({
+        apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
+        user: `HUMAN NATURAL LANGUAGE PASS (attempt ${attempts}).\n\nRewrite the summary and bullets into natural, grammatical English.\n\nCRITICAL RULES FOR THE SUMMARY:\n- Must be 2–3 complete sentences.\n- Must use present tense only. Examples of correct: "Directs cross-functional work. Builds design systems. Improves release speed."\n- Never use past tense in the summary (no "directed", "eliminated", "accelerated", "built" as the main verb).\n- Never start a sentence with a gerund fragment (no "Eliminating handoff friction...").\n- Must open with "X+ years".\n- Must not contain any job title.\n- Must sound like a person describing their current capabilities.\n\nFor bullets: keep them natural and grammatical. Prefer present or consistent tense.\nDo not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent HTML:\n${current}\n\nQuality issues found (if any): ${quality.reason}`,
+      });
+      lastLog = formatChatLog("natural", result, `attempt=${attempts}`);
+      if (!result.ok) {
+        if (attempts === maxAttempts) return { ok: false as const, error: result.error, log: lastLog };
+        continue;
+      }
+      try {
+        const { parseJsonObject } = await import("./gemini.server");
+        const parsed = parseJsonObject(result.text) as any;
+        const next = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : current);
+        const nextQuality = summaryQualityOk(next);
+        current = next;
+        if (nextQuality.ok) break;
+      } catch {
+        // keep current and try again
+      }
     }
+
+    return { ok: true as const, html: current, log: lastLog || "[natural] completed", attempts };
   });
 
 export const scannabilityPass = createServerFn({ method: "POST" })
@@ -222,7 +271,7 @@ export const scannabilityPass = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
-      user: `HUMAN SCANNABILITY PASS.\n\nMake the resume easy for a human to scan quickly. The most important points should stand out.\n\nInput:\n${data.html}\n\nRules:\n- Keep all factual content and truthful keyword weaving.\n- Prefer short bullets with the strongest outcome or skill near the start of the bullet.\n- Do not invent facts.\n- Return well-formed HTML.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already scannable, return unchanged.`,
+      user: `HUMAN SCANNABILITY PASS.\n\nMake the resume easy for a human to scan quickly. The most important points should stand out.\n\nInput:\n${data.html}\n\nRules:\n- Keep all factual content and truthful keyword weaving.\n- Prefer short bullets with the strongest outcome or skill near the start of the bullet.\n- Summary must remain present tense and grammatical.\n- Do not invent facts.\n- Return well-formed HTML.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already scannable, return unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("scannability", result) };
     try {
@@ -240,7 +289,7 @@ export const auditAndQA = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.1,
-      user: `AUDIT & QA.\n\nCompare the final HTML against the original. Flag any invented facts, broken tags, or major issues.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf clean, return the current HTML unchanged.`,
+      user: `AUDIT & QA.\n\nCompare the final HTML against the original. Flag any invented facts, broken tags, or major issues.\nAlso confirm the summary is present tense and grammatical.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf clean, return the current HTML unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("audit", result) };
     try {
