@@ -160,6 +160,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
             <div className="flex items-center gap-2">
               <video
                 src="/mascot/supportbot-mascot-transparent-200.webm"
+                poster="/mascot/mascot-still.png"
                 autoPlay
                 loop
                 muted
