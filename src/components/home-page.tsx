@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FileCode2, Play, RotateCcw, Moon, Sun, X } from "lucide-react";
 import { PdfConvertButton } from "@/components/pdf-convert-button";
 import { ApiKeyDialog } from "@/components/api-key-dialog";
+import { SupportBot } from "@/components/support-bot";
 import { JobSearchPanel } from "@/components/job-search-panel";
 import { OutputPanel } from "@/components/output-panel";
 import { PipelineRail } from "@/components/pipeline-rail";
@@ -326,6 +327,7 @@ export function HomePage() {
             />
           )}
         </main>
+        <SupportBot apiKey={apiKey} onApiKeyChange={setApiKey} />
       </div>
     </TooltipProvider>
   );
