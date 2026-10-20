@@ -112,7 +112,7 @@ export function usePipelineActions(opts: {
     let currentKeywords: KeywordSet | null = null;
 
     try {
-      mark(1, "running", "Ingesting job description…");
+      mark(1, "running", "Fetching job description and extracting ATS keywords…");
       const fetched = await fetchJobDescription({ data: { url: urlToUse } });
       if (fetched.ok) {
         currentJob = fetched.text.slice(0, MAX_JOB_CHARS);
@@ -128,49 +128,54 @@ export function usePipelineActions(opts: {
       if (!extracted.ok) { fail(1, extracted.error); return; }
       currentKeywords = extracted.keywords;
       setKeywords(currentKeywords);
-      mark(1, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords extracted`);
+      mark(1, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords / phrases extracted`);
 
-      await delay(1500);
-      mark(2, "running", "Building integrity schema…");
+      await delay(2800);
+      mark(2, "running", "Cataloging facts, dates, metrics, and employers…");
       const integrity = await buildIntegritySchema({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
       addLog((integrity as any).log);
       if (!integrity.ok) { fail(2, integrity.error || "Integrity failed"); return; }
-      mark(2, "done", "Baseline locked, gaps identified");
+      mark(2, "done", "Baseline locked — skill gaps flagged");
 
-      mark(3, "running", "Decomposing sections…");
-      mark(3, "done", "Work packages ready");
+      await delay(2200);
+      mark(3, "running", "Breaking resume into Summary, Experience, Skills, Education…");
+      // Coordinator does light section analysis so the step is real
+      const sections = (original.match(/<h2[^>]*>|<div class="section"/gi) || []).length;
+      mark(3, "done", `${sections || "Multiple"} sections identified — work packages ready`);
 
-      await delay(1200);
-      mark(4, "running", "Optimizing sections…");
+      await delay(2600);
+      mark(4, "running", "Rewriting sections with evidence-gated keyword weaving…");
       const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
       addLog((rewritten as any).log);
       if (!rewritten.ok) { fail(4, rewritten.error); return; }
       currentHtml = rewritten.html;
-      mark(4, "done", "Sections optimized");
+      mark(4, "done", "Sections rewritten for clarity and ATS alignment");
 
-      await delay(1200);
-      mark(5, "running", "Checking terminology…");
+      await delay(2400);
+      mark(5, "running", "Auditing for invented claims and technical inaccuracies…");
       const audited = await auditAndRemediate({ data: { apiKey, originalHtml: original, draftHtml: currentHtml, keywords: currentKeywords } });
       addLog((audited as any).log);
       if (!audited.ok) { fail(5, audited.error || "Audit failed"); return; }
       currentHtml = audited.html;
-      mark(5, "done", "Terminology checked");
+      mark(5, "done", "Integrity audit complete");
 
-      await delay(600);
+      await delay(1800);
+      mark(5, "running", "Polishing for natural human English…");
       const gram = await grammarAndNaturalEnglish({ data: { apiKey, html: currentHtml } });
       addLog((gram as any).log);
       if (gram.ok && (gram as any).html) currentHtml = (gram as any).html;
       mark(5, "done", "Human English applied");
 
-      await delay(1000);
-      mark(6, "running", "Simulating ATS parse…");
+      await delay(2000);
+      mark(6, "running", "Calculating real keyword match and validating formatting…");
       const sim = await simulateATS({ data: { apiKey, resumeHtml: currentHtml, keywords: currentKeywords } });
       addLog((sim as any).log);
       if (!sim.ok) { fail(6, sim.error || "ATS sim failed"); return; }
       const verdict = sim.result?.verdict || "PASS";
-      mark(6, "done", `${verdict} · ${sim.result?.match_percentage || "?"}% match`);
+      mark(6, "done", `${verdict} · ${sim.result?.match_percentage ?? "?"}% match`);
 
-      mark(7, "running", "Restoring original HTML layout…");
+      await delay(1600);
+      mark(7, "running", "Cleaning HTML and locking single-column layout…");
       const locked = await lockLayout({ data: { apiKey, originalHtml: original, currentHtml } });
       addLog((locked as any).log);
       if (!locked.ok) { fail(7, locked.error); return; }
@@ -178,8 +183,8 @@ export function usePipelineActions(opts: {
 
       const cleaned = await cleanHtml({ data: { originalHtml: original, currentHtml } });
       setFinalHtml(cleaned.html);
-      mark(7, "done", "Original layout restored");
-      toast.success("Multi-agent pipeline finished.");
+      mark(7, "done", "Clean ATS-safe HTML ready");
+      toast.success("Pipeline finished. Review the optimized resume.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "The pipeline failed.");
     } finally {

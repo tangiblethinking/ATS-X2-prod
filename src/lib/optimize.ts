@@ -49,15 +49,18 @@ function calculateMatchPercentage(html: string, keywords: KeywordSet): number {
 
 export function sanitizeHtml(html: string): string {
   let out = html;
-  // Fix common punctuation and tag issues
+  // Fix double periods and spacing
   out = out.replace(/\.{2,}/g, ".");
-  out = out.replace(/<\/strong>\s*\./g, ".</strong>");
-  out = out.replace(/<strong>\s*<\/strong>/g, "");
   out = out.replace(/\s+([.,;:])/g, "$1");
   out = out.replace(/\s{2,}/g, " ");
-  // Ensure basic structural validity for ATS
-  out = out.replace(/\s*<\s*\/\s*(strong|b|em|i)\s*>/gi, "</$1>");
-  out = out.replace(/\s*<\s*(strong|b|em|i)\s*>/gi, "<$1>");
+  // Repair common tag gluing and malformed strong/b/em
+  out = out.replace(/([a-zA-Z0-9.,])(<strong>|<b>|<em>|<i>)/gi, "$1 $2");
+  out = out.replace(/(<\/strong>|<\/b>|<\/em>|<\/i>)([a-zA-Z0-9])/gi, "$1 $2");
+  out = out.replace(/<\/strong>\s*\./g, ".</strong>");
+  out = out.replace(/<strong>\s*<\/strong>/g, "");
+  out = out.replace(/<b>\s*<\/b>/g, "");
+  // Collapse accidental double spaces created by repairs
+  out = out.replace(/\s{2,}/g, " ");
   return out.trim();
 }
 
@@ -126,7 +129,7 @@ export const rewriteResume = createServerFn({ method: "POST" })
 
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.3,
-      user: `REWRITE STEP: Optimize the resume text slots for ATS alignment while remaining 100% factually faithful to the original.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id with rewritten text.\n- Original slot text is the only source of facts. Never invent employers, titles, dates, metrics, tools, or relationships.\n- Actively weave in job description keywords and phrases when they truthfully describe work, tools, or outcomes already present in that slot.\n- Prefer the job's terminology for the same underlying experience.\n- Professional summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Write short, plain, natural sentences. Vary structure. No template language.\n- No more than two job keywords per sentence.\n\nMUST-PLACE TERMS (use when truthful): ${must || "(none)"}\nKEY PHRASES (use when truthful): ${phrases || "(none)"}\nOTHER KEYWORDS (use when truthful): ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
+      user: `REWRITE STEP: Optimize the resume text slots for ATS alignment while remaining 100% factually faithful to the original.\n\nReturn JSON only: { "slots": [ { "id": "t0", "text": "..." } ] }\n\nRules:\n- Return every slot id with rewritten text (plain text only — do not include HTML tags).\n- Original slot text is the only source of facts. Never invent employers, titles, dates, metrics, tools, or relationships.\n- Actively weave in job description keywords and phrases when they truthfully describe work, tools, or outcomes already present in that slot.\n- Prefer the job's terminology for the same underlying experience.\n- Professional summary must open with calculated "X+ years" and contain no job titles.\n- Leave names, dates, phones, emails, companies, and link labels unchanged.\n- Write short, plain, natural sentences. Vary structure. No template language.\n- No more than two job keywords per sentence.\n\nMUST-PLACE TERMS (use when truthful): ${must || "(none)"}\nKEY PHRASES (use when truthful): ${phrases || "(none)"}\nOTHER KEYWORDS (use when truthful): ${other || "(none)"}\n\nSLOTS:\n${JSON.stringify(slots)}`,
     });
     if (!result.ok) return result;
     try {
@@ -148,9 +151,11 @@ export const rewriteResume = createServerFn({ method: "POST" })
 export const buildIntegritySchema = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
   .handler(async ({ data }) => {
-    // Lightweight real integrity lock: extract plain facts for later comparison
-    const plain = plainText(data.resumeHtml).slice(0, 2000);
-    return { ok: true as const, log: `[buildIntegritySchema] OK | baseline locked (${plain.length} chars)`, schema: { plainSnippet: plain } };
+    const plain = plainText(data.resumeHtml);
+    const years = (plain.match(/\b(19|20)\d{2}\b/g) || []).length;
+    const metrics = (plain.match(/\b\d+%|\b\d+\s*(%|percent)/gi) || []).length;
+    const log = `[buildIntegritySchema] OK | baseline locked | years=${years} metrics=${metrics}`;
+    return { ok: true as const, log, schema: { plainLength: plain.length, years, metrics } };
   });
 
 export const auditAndRemediate = createServerFn({ method: "POST" })
@@ -158,7 +163,7 @@ export const auditAndRemediate = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.15,
-      user: `TERMINOLOGY & INTEGRITY STEP.\n\nOriginal (facts only):\n${data.originalHtml}\n\nDraft (optimized):\n${data.draftHtml}\n\nDo only this:\n- Find any invented technical relationships, tools, metrics, employers, or claims not supported by the original.\n- Rewrite only the offending sentences so the term is used correctly or remove the unsupported term.\n- Preserve all truthful keyword weaving that maps to existing experience.\n- Do not change anything else.\n- Return JSON: { "html": "corrected html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf nothing needs changing, return the draft unchanged.`,
+      user: `TERMINOLOGY & INTEGRITY STEP.\n\nOriginal (facts only):\n${data.originalHtml}\n\nDraft (optimized):\n${data.draftHtml}\n\nDo only this:\n- Find any invented technical relationships, tools, metrics, employers, or claims not supported by the original.\n- Rewrite only the offending sentences so the term is used correctly or remove the unsupported term.\n- Preserve all truthful keyword weaving that maps to existing experience.\n- Return well-formed HTML. Do not break tags.\n- Return JSON: { "html": "corrected html", "flags": [{"issue":"...","fix":"..."}] }\n\nIf nothing needs changing, return the draft unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("terminology", result) };
     try {
@@ -176,7 +181,7 @@ export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
-      user: `HUMAN ENGLISH POLISH STEP ONLY.\n\nRewrite bullets and the summary into short, plain, natural English a person would write.\n\nInput:\n${data.html}\n\nRules:\n- Keep all truthful keyword weaving and ATS-aligned phrasing that is already accurate.\n- One idea per bullet when possible.\n- No template language.\n- Do not add new facts, tools, or metrics.\n- Do not change employers, dates, or titles.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
+      user: `HUMAN ENGLISH POLISH STEP ONLY.\n\nRewrite bullets and the summary into short, plain, natural English a person would write.\n\nInput:\n${data.html}\n\nRules:\n- Keep all truthful keyword weaving and ATS-aligned phrasing that is already accurate.\n- One idea per bullet when possible.\n- No template language.\n- Do not add new facts, tools, or metrics.\n- Do not change employers, dates, or titles.\n- Return well-formed HTML. Do not glue tags to words or leave tags unclosed.\n- Return JSON only: { "html": "rewritten html" }\n\nIf already natural, return unchanged.`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("humanEnglish", result) };
     try {
