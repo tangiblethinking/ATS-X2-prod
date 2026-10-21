@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -188,13 +189,13 @@ export function OutputPanel({
         <TabsList className="mb-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <TabsTrigger value="resume">Resume</TabsTrigger>
+              <TabsTrigger value="resume" className={cn(docTab === "resume" && "bg-card text-foreground shadow-sm")}>Resume</TabsTrigger>
             </TooltipTrigger>
             <TooltipContent>The Generated Resume</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <TabsTrigger value="cover">Cover Letter</TabsTrigger>
+              <TabsTrigger value="cover" className={cn(docTab === "cover" && "bg-card text-foreground shadow-sm")}>Cover Letter</TabsTrigger>
             </TooltipTrigger>
             <TooltipContent>{coverHtml ? "The generated cover letter" : "None generated — select to generate"}</TooltipContent>
           </Tooltip>
@@ -385,9 +386,9 @@ function DocWorkspace({
     <Tabs value={pane} onValueChange={changePane} className="min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList>
-          <Tooltip><TooltipTrigger asChild><TabsTrigger value="preview">Preview</TabsTrigger></TooltipTrigger><TooltipContent>What your resume looks like on screen</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger asChild><TabsTrigger value="html">HTML</TabsTrigger></TooltipTrigger><TooltipContent>The code your resume uses</TooltipContent></Tooltip>
-          <Tooltip><TooltipTrigger asChild><TabsTrigger value="keywords">Keywords</TabsTrigger></TooltipTrigger><TooltipContent>The extracted words the generation included in the rewrite</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger asChild><TabsTrigger value="preview" className={cn(pane === "preview" && "bg-card text-foreground shadow-sm")}>Preview</TabsTrigger></TooltipTrigger><TooltipContent>What your resume looks like on screen</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger asChild><TabsTrigger value="html" className={cn(pane === "html" && "bg-card text-foreground shadow-sm")}>HTML</TabsTrigger></TooltipTrigger><TooltipContent>The code your resume uses</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger asChild><TabsTrigger value="keywords" className={cn(pane === "keywords" && "bg-card text-foreground shadow-sm")}>Keywords</TabsTrigger></TooltipTrigger><TooltipContent>The extracted words the generation included in the rewrite</TooltipContent></Tooltip>
         </TabsList>
         {live ? (
           <div className="flex flex-wrap gap-2">

@@ -7,6 +7,7 @@ import { JobSearchPanel } from "@/components/job-search-panel";
 import { OutputPanel } from "@/components/output-panel";
 import { PipelineRail } from "@/components/pipeline-rail";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -156,13 +157,13 @@ export function HomePage() {
                 <TabsList className="h-9">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <TabsTrigger value="pipeline" className="px-3 text-xs sm:text-sm">Pipeline</TabsTrigger>
+                      <TabsTrigger value="pipeline" className={cn("px-3 text-xs sm:text-sm", mode === "pipeline" && "bg-card text-foreground shadow-sm")}>Pipeline</TabsTrigger>
                     </TooltipTrigger>
                     <TooltipContent>The resume rewrite generator</TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <TabsTrigger value="search" className="px-3 text-xs sm:text-sm">Job Search</TabsTrigger>
+                      <TabsTrigger value="search" className={cn("px-3 text-xs sm:text-sm", mode === "search" && "bg-card text-foreground shadow-sm")}>Job Search</TabsTrigger>
                     </TooltipTrigger>
                     <TooltipContent>Find a job and send it to the pipeline</TooltipContent>
                   </Tooltip>
@@ -187,13 +188,13 @@ export function HomePage() {
               <TabsList className="h-9 w-full">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <TabsTrigger value="pipeline" className="flex-1 text-xs">Pipeline</TabsTrigger>
+                    <TabsTrigger value="pipeline" className={cn("flex-1 text-xs", mode === "pipeline" && "bg-card text-foreground shadow-sm")}>Pipeline</TabsTrigger>
                   </TooltipTrigger>
                   <TooltipContent>The resume rewrite generator</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <TabsTrigger value="search" className="flex-1 text-xs">Job Search</TabsTrigger>
+                    <TabsTrigger value="search" className={cn("flex-1 text-xs", mode === "search" && "bg-card text-foreground shadow-sm")}>Job Search</TabsTrigger>
                   </TooltipTrigger>
                   <TooltipContent>Find a job and send it to the pipeline</TooltipContent>
                 </Tooltip>
