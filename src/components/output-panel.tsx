@@ -518,7 +518,7 @@ function DocWorkspace({
                     openDocForPrint(live, docTitle);
                   }}
                 >
-                  <Printer className=size-3.5" />
+                  <Printer className="size-3.5" />
                   PDF / Print
                 </Button>
               </TooltipTrigger>
