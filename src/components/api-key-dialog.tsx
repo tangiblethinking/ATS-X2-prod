@@ -165,7 +165,7 @@ export function ApiKeyDialog({
                   </p>
                 </div>
                 {geminiSaved ? (
-                  <Badge variant="secondary" className="text-[10px]">Saved {maskApiKey(apiKey)}</Badge>
+                  <Badge variant="success" className="text-[10px]">Saved {maskApiKey(apiKey)}</Badge>
                 ) : (
                   <Badge variant="outline" className="text-[10px]">Required for Pipeline</Badge>
                 )}

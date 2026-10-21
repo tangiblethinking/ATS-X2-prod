@@ -345,35 +345,104 @@ export const scannabilityPass = createServerFn({ method: "POST" })
         const parsed = parseJsonObject(result.text) as any;
         const next = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : current);
         current = next;
-        if (scannabilityScore(next) > bestScore) {
-          bestScore = scannabilityScore(next);
-          bestHtml = next;
-        }
       } catch {
         // continue
       }
     }
 
-    return { ok: true as const, html: sanitizeHtml(bestHtml), log: `[scannability] score=${bestScore}% attempts=${attempts}`, score: bestScore };
+    const finalScore = Math.max(bestScore, scannabilityScore(current));
+    return { ok: true as const, html: sanitizeHtml(finalScore >= bestScore ? current : bestHtml), log: `[scannability] OK | score=${finalScore}% attempts=${attempts}`, score: finalScore };
+  });
+
+export const auditAndQA = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => {
+    const result = await chat({
+      apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.1,
+      user: `AUDIT & QA — must pass at 100%.\n\nCompare final against original. Check for invented facts, broken tags, summary grammar (present tense, capital letters, no titles, no gerund fragments, no "Specializes in"), and overall quality.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }`,
+    });
+    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("audit", result) };
+    try {
+      const { parseJsonObject } = await import("./gemini.server");
+      const parsed = parseJsonObject(result.text) as any;
+      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.currentHtml);
+      const flags = Array.isArray(parsed.flags) ? parsed.flags : [];
+      return { ok: true as const, html, flags, log: formatChatLog("audit", result) };
+    } catch {
+      return { ok: true as const, html: sanitizeHtml(data.currentHtml), flags: [], log: "[audit] parse failed, kept current" };
+    }
+  });
+
+export const cleanHtml = createServerFn({ method: "POST" })
+  .validator(z.object({ originalHtml: z.string(), currentHtml: z.string() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml) }));
+
+const instructionSchema = z
+  .string()
+  .trim()
+  .min(3, "Enter edit instructions.")
+  .max(4000, "Instructions are too long.");
+
+/**
+ * Direct user-driven edit of the current output HTML.
+ * Uses customize-hard-rules.txt as the system instruction set.
+ * Applies only the requested text and/or layout changes.
+ */
+export const customizeResume = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      resumeHtml: resumeSchema,
+      instructions: instructionSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { geminiChat } = await import("./gemini.server");
+    const result = await geminiChat({
+      apiKey: data.apiKey,
+      messages: [
+        { role: "system", content: customizeHardRules },
+        {
+          role: "user",
+          content: `Apply the user's edit instructions to the resume HTML below.\n\nUSER INSTRUCTIONS:\n${data.instructions}\n\nCURRENT RESUME HTML:\n${data.resumeHtml}\n\nReturn ONLY the full HTML after applying the instructions. No markdown, no commentary.`,
+        },
+      ],
+      maxTokens: 8192,
+      temperature: 0.2,
+    });
+    if (!result.ok) return result;
+    const html = stripMarkdownFences(result.text);
+    if (html.length < 40) {
+      return { ok: false as const, error: "The customize pass returned almost no HTML." };
+    }
+    return { ok: true as const, html: sanitizeHtml(html) };
   });
 
 export const generateCoverLetter = createServerFn({ method: "POST" })
-  .validator(z.object({
-    apiKey: apiKeySchema,
-    jobText: z.string().trim().min(40).max(MAX_JOB_CHARS),
-    resumeHtml: resumeSchema,
-    keywords: z.any().optional(),
-  }))
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      jobText: z.string().trim().min(40).max(MAX_JOB_CHARS),
+      resumeHtml: resumeSchema,
+      keywords: z
+        .object({
+          keywords: z.array(z.string()),
+          phrases: z.array(z.string()),
+          must_have: z.array(z.string()),
+          nice_to_have: z.array(z.string()),
+        })
+        .optional(),
+    }),
+  )
   .handler(async ({ data }) => {
-    const mustHave = (data.keywords?.must_have || []).slice(0, 12).join(", ");
-    const phrases = (data.keywords?.phrases || []).slice(0, 10).join(", ");
-    const keywords = (data.keywords?.keywords || []).slice(0, 15).join(", ");
-
+    const mustHave = data.keywords?.must_have?.filter(Boolean).join(", ") ?? "";
+    const phrases = data.keywords?.phrases?.filter(Boolean).join(", ") ?? "";
+    const keywords = data.keywords?.keywords?.filter(Boolean).join(", ") ?? "";
     const result = await chat({
       apiKey: data.apiKey,
-      maxTokens: 4000,
-      temperature: 0.45,
-      user: `Write a short, professional cover letter as complete print-ready HTML.\n\nRules:\n- Base every claim on the resume; do not invent employers, titles, metrics, or skills.\n- 3–4 short paragraphs plus a brief greeting and closing.\n- Natural, confident tone; weave in high-priority keywords where they fit without stuffing.\n- Return ONLY full HTML (include <!DOCTYPE html>, <html>, <head> with basic print-friendly styles, and follow the heading layout style of the resume HTML <body>). No markdown fences, no commentary.\n- Simple clean typography suitable for print (letter size, readable margins).\n- Match the visual branding and layout style of the resume HTML as closely as possible so the two documents look consistently branded (same fonts, colors, heading styles, margins, header treatment if present).\n\nMUST_HAVE (if any):\n${mustHave || "(none)"}\n\nPHRASES (if any):\n${phrases || "(none)"}\n\nKEYWORDS (if any):\n${keywords || "(none)"}\n\nJOB DESCRIPTION:\n${data.jobText}\n\nALIGNED RESUME HTML (source of truth for candidate facts and layout style):\n${data.resumeHtml}`,
+      maxTokens: 4096,
+      temperature: 0.35,
+      user: `Write a professional cover letter as a complete, self-contained HTML document.\n\nRequirements:\n- Align tightly with the job description and the rewritten resume below.\n- Stay 100% truthful to the resume; do not invent employers, titles, metrics, or skills.\n- 3–4 short paragraphs plus a brief greeting and closing.\n- Natural, confident tone; weave in high-priority keywords where they fit without stuffing.\n- Return ONLY full HTML (include <!DOCTYPE html>, <html>, <head> with basic print-friendly styles, and follow the heading layout style of the resume HTML <body>). No markdown fences, no commentary.\n- Simple clean typography suitable for print (letter size, readable margins).\n- Match the visual branding and layout style of the resume HTML as closely as possible so the two documents look consistently branded (same fonts, colors, heading styles, margins, header treatment if present).\n\nMUST_HAVE (if any):\n${mustHave || "(none)"}\n\nPHRASES (if any):\n${phrases || "(none)"}\n\nKEYWORDS (if any):\n${keywords || "(none)"}\n\nJOB DESCRIPTION:\n${data.jobText}\n\nALIGNED RESUME HTML (source of truth for candidate facts and layout style):\n${data.resumeHtml}`,
     });
     if (!result.ok) return result;
     const html = stripMarkdownFences(result.text);
@@ -416,7 +485,9 @@ export const getEncouragement = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const result = await chat({
       apiKey: data.apiKey,
-      user: `You are a warm, supportive career coach. Generate ONE short, genuine, positive message (1-2 sentences, max 35 words) for a job seeker.\nPraise their persistence, commitment, and quiet bravery in pursuing a better career and life. Vary the angle each time (resilience, future impact, self-belief, progress already made, etc.).\nBe specific and human. No clichés like “you got this” unless you make it fresh. No markdown, no quotes around the message, no extra commentary. Just the message.`,
+      user: `You are a warm, supportive career coach. Generate ONE short, genuine, positive message (1-2 sentences, max 35 words) for a job seeker.
+Praise their persistence, commitment, and quiet bravery in pursuing a better career and life. Vary the angle each time (resilience, future impact, self-belief, progress already made, etc.).
+Be specific and human. No clichés like “you got this” unless you make it fresh. No markdown, no quotes around the message, no extra commentary. Just the message.`,
       maxTokens: 120,
       temperature: 0.85,
     });
