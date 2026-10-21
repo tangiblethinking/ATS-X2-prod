@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, ChevronRight, Check } from "lucide-react";
+import { MessageCircle, X, ChevronRight, Check, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isPlausibleApiKey, saveApiKey } from "@/lib/api-key-store";
@@ -15,6 +15,7 @@ type Step =
   | "step5"
   | "step6"
   | "step7"
+  | "step8"
   | "done"
   | "dismissed";
 
@@ -69,16 +70,21 @@ const STEPS: Record<Step, { text: string; buttons?: { label: string; next: Step 
     buttons: [{ label: "Next", next: "step5" }],
   },
   step5: {
-    text: "If you created a new project: name it and click Create project.\n\nThen make sure that project is selected in the dropdown.",
-    images: [IMG_NEW_PROJECT, IMG_SELECT],
-    buttons: [{ label: "Project is selected", next: "step6" }],
+    text: "If you chose to create a new project: name it and click Create project.",
+    images: [IMG_NEW_PROJECT],
+    buttons: [{ label: "Project created", next: "step6" }],
   },
   step6: {
-    text: "Click the Create key button. Your key will be created.",
-    images: [IMG_READY],
-    buttons: [{ label: "Key is created", next: "step7" }],
+    text: "Make sure your project is selected in the dropdown.",
+    images: [IMG_SELECT],
+    buttons: [{ label: "Project is selected", next: "step7" }],
   },
   step7: {
+    text: "Click the Create key button.",
+    images: [IMG_READY],
+    buttons: [{ label: "Key is created", next: "step8" }],
+  },
+  step8: {
     text: "Your new key appears (it looks like a long string of letters and numbers).\n\nClick the copy icon next to it, or the “Copy key” button. Then come back to this tab and paste it below.",
     images: [IMG_COPY],
     buttons: [{ label: "I copied the key", next: "done" }],
@@ -118,6 +124,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
   const [draft, setDraft] = useState("");
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const hasKey = Boolean(apiKey);
@@ -210,7 +217,11 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
       )}
 
       {open && (
-        <div className="fixed bottom-4 right-4 z-50 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:w-96">
+        <div
+          className={`fixed bottom-4 right-4 z-50 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:w-96 ${
+            isExpanded ? "top-4" : ""
+          }`}
+        >
           <header className="flex items-center justify-between gap-2 border-b border-neutral-800 bg-black px-3 py-2">
             <div className="flex items-center gap-2">
               <video
@@ -224,12 +235,29 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
               />
               <p className="text-sm font-medium text-white">Support</p>
             </div>
-            <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-white hover:bg-neutral-800 hover:text-white" onClick={() => setOpen(false)} aria-label="Minimize">
-              <X className="size-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-white hover:bg-neutral-800 hover:text-white"
+                onClick={() => setIsExpanded((v) => !v)}
+                aria-label={isExpanded ? "Collapse chat" : "Expand chat to full height"}
+              >
+                {isExpanded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-white hover:bg-neutral-800 hover:text-white" onClick={() => setOpen(false)} aria-label="Minimize">
+                <X className="size-4" />
+              </Button>
+            </div>
           </header>
 
-          <div ref={scrollRef} className="flex max-h-80 flex-col gap-3 overflow-y-auto px-3 py-3 text-sm">
+          <div
+            ref={scrollRef}
+            className={`flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3 text-sm ${
+              isExpanded ? "" : "max-h-80"
+            }`}
+          >
             {messages.map((m) => (
               <div
                 key={m.id}
