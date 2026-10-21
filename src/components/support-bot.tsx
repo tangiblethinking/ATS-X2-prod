@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 type Step =
   | "welcome"
+  | "tip"
   | "haveKey"
   | "step1"
   | "step2"
@@ -43,9 +44,14 @@ const STEPS: Record<Step, { text: string; buttons?: { label: string; next: Step 
   welcome: {
     text: "Hi There — I’m here to help you get set up. To use the power of AI you'll need a key (if you have a google/gmail account you already have this). It only takes a couple of minutes, and the key stays with you. I'll never see it. Ready to start?",
     buttons: [
-      { label: "Let’s do it", next: "step1" },
+      { label: "Let’s do it", next: "tip" },
       { label: "I have my key", next: "haveKey" },
     ],
+  },
+
+  tip: {
+    text: "Just a quick helpful note — click through all the next steps here first before actually doing them and you'll have an even easier time getting all set up.",
+    buttons: [{ label: "Got it!", next: "step1" }],
   },
   haveKey: {
     text: "Great! Just paste your Gemini key in the box below (where it says “Paste your Gemini key here…”) and hit the check button. I’ll save it for you automatically.",
