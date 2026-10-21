@@ -17,6 +17,7 @@ type Step =
   | "step6"
   | "step7"
   | "step8"
+  | "pasteNow"
   | "done"
   | "dismissed";
 
@@ -93,7 +94,11 @@ const STEPS: Record<Step, { text: string; buttons?: { label: string; next: Step 
   step8: {
     text: "Your new key appears (it looks like a long string of letters and numbers).\n\nClick the copy icon next to it, or the “Copy key” button. Then come back to this tab and paste it below.",
     images: [IMG_COPY],
-    buttons: [{ label: "I copied the key", next: "done" }],
+    buttons: [{ label: "I copied the key", next: "pasteNow" }],
+  },
+
+  pasteNow: {
+    text: "Nice work! Just paste it below and select the checkmark to complete the setup.",
   },
   done: {
     text: "Success! You're ready!",
@@ -144,8 +149,13 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
   }, [hasKey, hasAutoOpened]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, open]);
+    const el = scrollRef.current;
+    if (!el) return;
+    // Scroll after paint so images and CTAs are included in height
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    });
+  }, [messages, open, step]);
 
   function pushBot(text: string, images?: string[]) {
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), from: "bot", text, images }]);
@@ -283,6 +293,10 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                         alt="Guide screenshot — click to enlarge"
                         className="max-w-full cursor-pointer rounded-md border border-border hover:opacity-90"
                         onClick={() => setFullscreenImage(src)}
+                        onLoad={() => {
+                          const el = scrollRef.current;
+                          if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+                        }}
                       />
                     ))}
                   </div>
