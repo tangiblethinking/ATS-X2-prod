@@ -421,4 +421,6 @@ export const getEncouragement = createServerFn({ method: "POST" })
       temperature: 0.85,
     });
     if (!result.ok) return { ok: false as const, error: result.error || "Could not generate encouragement." };
-    const message = (result.text || "").trim().replace(/^[
+    const message = (result.text || "").trim().replace(/^["']|["']$/g, "");
+    return { ok: true as const, message };
+  });

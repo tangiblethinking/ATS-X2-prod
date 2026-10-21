@@ -518,4 +518,93 @@ function DocWorkspace({
                     openDocForPrint(live, docTitle);
                   }}
                 >
-                  <Printer className=
+                  <Printer className=size-3.5" />
+                  PDF / Print
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open your resume in a new tab and autoprint</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null}
+      </div>
+
+      {(rewriting || customizing || generatingCover) && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm">
+          <LoaderCircle className="size-4 animate-spin shrink-0" />
+          <span className="shimmer-text font-medium">
+            {rewriting
+              ? "Rewriting output…"
+              : customizing
+                ? "Customizing…"
+                : "Generating cover letter…"}
+          </span>
+          <span className="text-xs text-muted-foreground">Please wait. Do not start another task.</span>
+        </div>
+      )}
+
+      <TabsContent value="preview">
+        {live ? (
+          <div className="overflow-hidden rounded-xl bg-paper shadow-[var(--shadow-border)]">
+            <iframe
+              title="Document preview"
+              sandbox=""
+              srcDoc={live}
+              className="h-[min(72vh,880px)] w-full bg-paper"
+            />
+          </div>
+        ) : (
+          <EmptyNote text={emptyPreview} />
+        )}
+      </TabsContent>
+
+      <TabsContent value="html">
+        {html || draft ? (
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitDraft}
+            spellCheck={false}
+            disabled={busy}
+            className="h-[min(72vh,880px)] resize-none rounded-xl bg-secondary p-4 font-mono text-xs leading-relaxed text-foreground"
+            aria-label="Editable document HTML"
+          />
+        ) : (
+          <EmptyNote text={emptyHtml} />
+        )}
+      </TabsContent>
+
+      <TabsContent value="keywords">
+        {keywords ? (
+          <div className="flex flex-col gap-5">
+            <KeywordGroup title="Must have" items={keywords.must_have} />
+            <KeywordGroup title="Phrases" items={keywords.phrases} />
+            <KeywordGroup title="Keywords" items={keywords.keywords} />
+            <KeywordGroup title="Nice to have" items={keywords.nice_to_have} />
+          </div>
+        ) : (
+          <EmptyNote text="Keywords appear after step 1." />
+        )}
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function KeywordGroup({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium">{title}</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <Badge key={item} variant="stone">
+            {item}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EmptyNote({ text }: { text: string }) {
+  return <p className="text-sm text-muted-foreground">{text}</p>;
+}
