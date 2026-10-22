@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 
@@ -53,17 +54,19 @@ export const Route = createRootRoute({
       </head>
       <body>
         <PreviewHostBridge />
-        <AuthProvider>
-          <Outlet />
-          <Toaster
-            theme="system"
-            position="bottom-right"
-            toastOptions={{
-              className:
-                "font-sans !bg-popover !text-popover-foreground !border-border",
-            }}
-          />
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <Outlet />
+            <Toaster
+              theme="system"
+              position="bottom-right"
+              toastOptions={{
+                className:
+                  "font-sans !bg-popover !text-popover-foreground !border-border",
+              }}
+            />
+          </AuthProvider>
+        </LanguageProvider>
         <Scripts />
       </body>
     </html>

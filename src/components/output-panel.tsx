@@ -26,6 +26,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { AuditResult, KeywordSet } from "@/lib/pipeline-types";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 export type DocKind = "resume" | "cover";
 
@@ -147,6 +148,7 @@ export function OutputPanel({
   onGenerateCover,
   onHtmlChange,
 }: Props) {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [instructions, setInstructions] = useState("");
@@ -155,10 +157,9 @@ export function OutputPanel({
   if (!html && !keywords && !coverHtml) {
     return (
       <div className="flex min-h-48 flex-col items-center justify-center gap-2 rounded-xl bg-secondary/60 px-6 py-10 text-center">
-        <p className="font-display text-lg text-foreground">No output yet</p>
+        <p className="font-display text-lg text-foreground">{t("noOutputYet")}</p>
         <p className="max-w-sm text-sm text-muted-foreground">
-          Save an API key, add a job URL and your resume HTML, then run the
-          six-step pipeline.
+          {t("saveKeyFirst")}
         </p>
       </div>
     );

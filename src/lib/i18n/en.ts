@@ -1,0 +1,98 @@
+export const en = {
+  // Header
+  appName: "ATS Align",
+  tagline: "Resume to job · search & align",
+  pipeline: "Pipeline",
+  jobSearch: "Job Search",
+  pipelineTooltip: "The resume rewrite generator",
+  jobSearchTooltip: "Find a job and send it to the pipeline",
+  switchToLight: "Switch to light mode",
+  switchToDark: "Switch to dark mode",
+  displayLight: "Display mode: light",
+  displayDark: "Display mode: dark",
+  languageSelector: "Select language",
+
+  // Hero
+  heroTitle: "Align the resume you already have to the job you want.",
+  heroSubtitle: "Paste a job URL and resume HTML. Use Convert PDF to HTML if you only have a PDF.",
+
+  // Inputs
+  inputs: "Inputs",
+  jobUrlLabel: "Job description URL",
+  jobUrlPlaceholder: "https://…",
+  clearJobUrl: "Clear job URL",
+  jobTextLabel: "Job description text",
+  jobTextHint: "used if the URL is blocked",
+  jobTextPlaceholder: "Optional. Paste the posting if the page cannot be fetched.",
+  clearJobText: "Clear job description text",
+  resumeHtmlLabel: "Resume HTML",
+  loadHtml: "Load .html",
+  loadHtmlTooltip: "Upload your HTML file to use",
+  resumePlaceholder: "Paste the full HTML of your resume, including style tags.",
+  clearResume: "Clear resume HTML",
+  characters: "characters",
+  runPipeline: "Run pipeline",
+  running: "Running…",
+  runPipelineTooltip: "Start the resume rewrite generation processes",
+  clearOutput: "Clear output",
+  clearOutputTooltip: "Clear all inputs (Cannot undo!)",
+  copyLog: "Copy log",
+  copyLogTooltip: "What the generation did in the background",
+  logCopied: "Pipeline log copied.",
+  logCopyFailed: "Could not copy log.",
+  apiKeyRequired: "A Gemini API key is required. Save one under API keys in the header.",
+  fileTooLarge: "That HTML file is too large.",
+
+  // Pipeline rail
+  pipelineComplete: "Pipeline complete",
+  finalHtmlReady: "Final HTML is ready.",
+  readyToStart: "Ready to start the pipeline.",
+  doNotClose: "Each step waits for the previous one. Do not close this tab.",
+
+  // Output
+  output: "Output",
+  noOutputYet: "No output yet",
+  saveKeyFirst: "Save an API key, add a job URL and your resume HTML, then run the six-step pipeline.",
+
+  // Support bot - language first
+  pleaseSelectLanguage: "Please select your language",
+  openLanguageSelector: "Open language selector",
+
+  // Support bot steps
+  welcome: "Hi There — I’m here to help you get set up. To use the power of AI you'll need a key (if you have a google/gmail account you already have this). It only takes a couple of minutes, and the key stays with you. I'll never see it. Ready to start?",
+  letsDoIt: "Let’s do it",
+  iHaveMyKey: "I have my key",
+  tip: "Just a quick helpful note — click through all the next steps here first before actually doing them and you'll have an even easier time getting all set up.",
+  gotIt: "Got it!",
+  haveKey: "Great! Just paste your Gemini key in the box below (where it says “Paste your Gemini key here…”) and hit the check button. I’ll save it for you automatically.",
+  step1: "First, open Google AI Studio’s API keys page. Click the link below — a new tab will open so you can come back to this tab anytime for help.\n\nhttps://aistudio.google.com/api-keys\n\nSign in with your Google account if it asks. (First time? You’ll accept a short terms notice — that’s normal.)",
+  imOnThePage: "I’m on the page",
+  openAiStudio: "Open Google AI Studio API keys",
+  step2: "Look for the Create API key button (usually in the top-right corner). Click it.",
+  iClickedCreate: "I clicked Create API key",
+  step3: "A window opens. You can name your key (optional) or leave the default.\n\nThen click the project dropdown.",
+  iOpenedDropdown: "I opened the dropdown",
+  step4: "You’ll see options: Import project, + Create project, or any existing projects.\n\nPick an existing one if you have it, or choose “+ Create project” to make a new one.",
+  next: "Next",
+  step5: "If you chose to create a new project: name it and click Create project.",
+  projectCreated: "Project created",
+  step6: "Make sure your project is selected in the dropdown.",
+  projectSelected: "Project is selected",
+  step7: "Click the Create key button.",
+  keyCreated: "Key is created",
+  step8: "Your new key appears (it looks like a long string of letters and numbers).\n\nClick the copy icon next to it, or the “Copy key” button. Then come back to this tab and paste it below.",
+  iCopiedTheKey: "I copied the key",
+  pasteNow: "Nice work! Just paste it below and select the checkmark to complete the setup.",
+  successReady: "Success! You're ready!",
+  dismissed: "No problem. I’ll stay in the corner if you need help getting or replacing your key later.",
+  geminiKeySaved: "Gemini key saved from chat.",
+  keyDetected: "(key detected)",
+  fallbackHelp: "I can help you get a Gemini API key. Use the buttons above, or paste a key that looks like a long string of letters and numbers and I’ll save it for you.",
+  openSupport: "Open support",
+  pasteKeyPlaceholder: "Paste your Gemini key here…",
+
+  // Common
+  close: "Close",
+} as const;
+
+export type TranslationKey = keyof typeof en;

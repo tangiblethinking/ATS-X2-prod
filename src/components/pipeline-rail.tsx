@@ -2,6 +2,7 @@ import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { PIPELINE_STEPS, type StepId, type StepStatus } from "@/lib/pipeline-types";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 type Props = {
   statuses: Record<StepId, StepStatus>;
@@ -10,6 +11,7 @@ type Props = {
 };
 
 export function PipelineRail({ statuses, details, running }: Props) {
+  const { t } = useLanguage();
   const total = PIPELINE_STEPS.length;
   const doneCount = PIPELINE_STEPS.filter((s) => statuses[s.id] === "done").length;
   const runningStep = PIPELINE_STEPS.find((s) => statuses[s.id] === "running");
@@ -50,7 +52,7 @@ export function PipelineRail({ statuses, details, running }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium">Pipeline</p>
+        <p className="text-sm font-medium">{t("pipeline")}</p>
         <p className="font-mono text-xs tabular-nums text-muted-foreground">
           {activeStepNum}/{total}
         </p>
@@ -63,8 +65,8 @@ export function PipelineRail({ statuses, details, running }: Props) {
             <Check className="size-3.5" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-medium leading-snug">Pipeline complete</p>
-            <p className="text-xs text-muted-foreground">Final HTML is ready.</p>
+            <p className="text-sm font-medium leading-snug">{t("pipelineComplete")}</p>
+            <p className="text-xs text-muted-foreground">{t("finalHtmlReady")}</p>
           </div>
         </div>
       ) : displayStep ? (
@@ -108,12 +110,12 @@ export function PipelineRail({ statuses, details, running }: Props) {
           </div>
         </div>
       ) : (
-        <p className="px-2 text-xs text-muted-foreground">Ready to start the pipeline.</p>
+        <p className="px-2 text-xs text-muted-foreground">{t("readyToStart")}</p>
       )}
 
       {running ? (
         <p className="text-xs text-muted-foreground">
-          Each step waits for the previous one. Do not close this tab.
+          {t("doNotClose")}
         </p>
       ) : null}
     </div>

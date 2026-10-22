@@ -6,6 +6,7 @@ import { SupportBot } from "@/components/support-bot";
 import { JobSearchPanel } from "@/components/job-search-panel";
 import { OutputPanel } from "@/components/output-panel";
 import { PipelineRail } from "@/components/pipeline-rail";
+import { LanguageSelector } from "@/components/LanguageSelector";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +26,7 @@ import {
   type StepStatus,
 } from "@/lib/pipeline-types";
 import { usePipelineActions } from "@/components/use-pipeline-actions";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { toast } from "sonner";
 
 const idleStatuses = (): Record<StepId, StepStatus> => ({
@@ -67,6 +69,7 @@ function applyTheme(theme: Theme) {
 }
 
 export function HomePage() {
+  const { t } = useLanguage();
   const [apiKey, setApiKey] = useState("");
   const [searchApiKey, setSearchApiKey] = useState("");
   const [jobUrl, setJobUrl] = useState("");
@@ -129,7 +132,7 @@ export function HomePage() {
     if (!file) return;
     const text = await file.text();
     if (text.length > MAX_RESUME_CHARS) {
-      toast.error("That HTML file is too large.");
+      toast.error(t("fileTooLarge"));
       return;
     }
     setResumeHtml(text);
@@ -148,24 +151,24 @@ export function HomePage() {
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 items-center gap-4">
               <div className="flex min-w-0 items-baseline gap-3">
-                <p className="font-display text-xl font-medium tracking-tight">ATS Align</p>
+                <p className="font-display text-xl font-medium tracking-tight">{t("appName")}</p>
                 <p className="hidden truncate text-sm text-muted-foreground sm:block">
-                  Resume to job · search & align
+                  {t("tagline")}
                 </p>
               </div>
               <Tabs value={mode} onValueChange={(v) => setMode(v as "pipeline" | "search")} className="hidden sm:block">
                 <TabsList className="h-9">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <TabsTrigger value="pipeline" className={cn("px-3 text-xs sm:text-sm", mode === "pipeline" && "bg-card text-foreground shadow-sm")}>Pipeline</TabsTrigger>
+                      <TabsTrigger value="pipeline" className={cn("px-3 text-xs sm:text-sm", mode === "pipeline" && "bg-card text-foreground shadow-sm")}>{t("pipeline")}</TabsTrigger>
                     </TooltipTrigger>
-                    <TooltipContent>The resume rewrite generator</TooltipContent>
+                    <TooltipContent>{t("pipelineTooltip")}</TooltipContent>
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <TabsTrigger value="search" className={cn("px-3 text-xs sm:text-sm", mode === "search" && "bg-card text-foreground shadow-sm")}>Job Search</TabsTrigger>
+                      <TabsTrigger value="search" className={cn("px-3 text-xs sm:text-sm", mode === "search" && "bg-card text-foreground shadow-sm")}>{t("jobSearch")}</TabsTrigger>
                     </TooltipTrigger>
-                    <TooltipContent>Find a job and send it to the pipeline</TooltipContent>
+                    <TooltipContent>{t("jobSearchTooltip")}</TooltipContent>
                   </Tooltip>
                 </TabsList>
               </Tabs>
@@ -174,12 +177,13 @@ export function HomePage() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button type="button" variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={toggleTheme}
-                    aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+                    aria-label={theme === "dark" ? t("switchToLight") : t("switchToDark")}>
                     {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{theme === "dark" ? "Display mode: light" : "Display mode: dark"}</TooltipContent>
+                <TooltipContent>{theme === "dark" ? t("displayLight") : t("displayDark")}</TooltipContent>
               </Tooltip>
+              <LanguageSelector />
               <ApiKeyDialog apiKey={apiKey} onChange={setApiKey} searchApiKey={searchApiKey} onSearchChange={setSearchApiKey} />
             </div>
           </div>
@@ -188,15 +192,15 @@ export function HomePage() {
               <TabsList className="h-9 w-full">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <TabsTrigger value="pipeline" className={cn("flex-1 text-xs", mode === "pipeline" && "bg-card text-foreground shadow-sm")}>Pipeline</TabsTrigger>
+                    <TabsTrigger value="pipeline" className={cn("flex-1 text-xs", mode === "pipeline" && "bg-card text-foreground shadow-sm")}>{t("pipeline")}</TabsTrigger>
                   </TooltipTrigger>
-                  <TooltipContent>The resume rewrite generator</TooltipContent>
+                  <TooltipContent>{t("pipelineTooltip")}</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <TabsTrigger value="search" className={cn("flex-1 text-xs", mode === "search" && "bg-card text-foreground shadow-sm")}>Job Search</TabsTrigger>
+                    <TabsTrigger value="search" className={cn("flex-1 text-xs", mode === "search" && "bg-card text-foreground shadow-sm")}>{t("jobSearch")}</TabsTrigger>
                   </TooltipTrigger>
-                  <TooltipContent>Find a job and send it to the pipeline</TooltipContent>
+                  <TooltipContent>{t("jobSearchTooltip")}</TooltipContent>
                 </Tooltip>
               </TabsList>
             </Tabs>
@@ -208,25 +212,25 @@ export function HomePage() {
             <>
               <section className="stagger-in max-w-2xl">
                 <h1 className="font-display text-3xl font-medium leading-tight tracking-tight sm:text-4xl">
-                  Align the resume you already have to the job you want.
+                  {t("heroTitle")}
                 </h1>
                 <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-                  Paste a job URL and resume HTML. Use Convert PDF to HTML if you only have a PDF.
+                  {t("heroSubtitle")}
                 </p>
               </section>
 
               <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
                 <Card>
-                  <CardHeader><CardTitle>Inputs</CardTitle></CardHeader>
+                  <CardHeader><CardTitle>{t("inputs")}</CardTitle></CardHeader>
                   <CardContent className="flex flex-col gap-5">
                     <div className="flex flex-col gap-2">
-                      <Label htmlFor="job-url">Job description URL</Label>
+                      <Label htmlFor="job-url">{t("jobUrlLabel")}</Label>
                       <div className="relative">
-                        <Input id="job-url" type="url" inputMode="url" placeholder="https://…" value={jobUrl}
+                        <Input id="job-url" type="url" inputMode="url" placeholder={t("jobUrlPlaceholder")} value={jobUrl}
                           onChange={(e) => setJobUrl(e.target.value)} disabled={busy} className={jobUrl ? "pr-10" : undefined} />
                         {jobUrl ? (
                           <button type="button" className="absolute right-2 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                            aria-label="Clear job URL" disabled={busy} onClick={() => setJobUrl("")}>
+                            aria-label={t("clearJobUrl")} disabled={busy} onClick={() => setJobUrl("")}>
                             <X className="size-3.5" />
                           </button>
                         ) : null}
@@ -234,17 +238,17 @@ export function HomePage() {
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="job-text">
-                        Job description text
-                        <span className="ml-2 font-normal text-muted-foreground">used if the URL is blocked</span>
+                        {t("jobTextLabel")}
+                        <span className="ml-2 font-normal text-muted-foreground">{t("jobTextHint")}</span>
                       </Label>
                       <div className="relative">
                         <Textarea id="job-text" value={jobText}
                           onChange={(e) => setJobText(e.target.value.slice(0, MAX_JOB_CHARS))}
                           disabled={busy} className={`min-h-28 ${jobText ? "pr-10" : ""}`}
-                          placeholder="Optional. Paste the posting if the page cannot be fetched." />
+                          placeholder={t("jobTextPlaceholder")} />
                         {jobText ? (
                           <button type="button" className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                            aria-label="Clear job description text" disabled={busy} onClick={() => setJobText("")}>
+                            aria-label={t("clearJobText")} disabled={busy} onClick={() => setJobText("")}>
                             <X className="size-3.5" />
                           </button>
                         ) : null}
@@ -252,7 +256,7 @@ export function HomePage() {
                     </div>
                     <div className="flex flex-col gap-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <Label htmlFor="resume-html">Resume HTML</Label>
+                        <Label htmlFor="resume-html">{t("resumeHtmlLabel")}</Label>
                         <div className="flex flex-wrap items-center gap-1">
                           <PdfConvertButton
                             apiKey={apiKey}
@@ -266,10 +270,10 @@ export function HomePage() {
                             <TooltipTrigger asChild>
                               <Button type="button" variant="ghost" size="sm" className="h-9" disabled={busy}
                                 onClick={() => fileRef.current?.click()}>
-                                <FileCode2 className="size-3.5" /> Load .html
+                                <FileCode2 className="size-3.5" /> {t("loadHtml")}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Upload your HTML file to use</TooltipContent>
+                            <TooltipContent>{t("loadHtmlTooltip")}</TooltipContent>
                           </Tooltip>
                         </div>
                         <input ref={fileRef} type="file" accept=".html,.htm,text/html" className="hidden"
@@ -280,54 +284,54 @@ export function HomePage() {
                           onChange={(e) => setResumeHtml(e.target.value.slice(0, MAX_RESUME_CHARS))}
                           disabled={busy}
                           className={`min-h-48 font-mono text-xs leading-relaxed ${resumeHtml ? "pr-10" : ""}`}
-                          placeholder="Paste the full HTML of your resume, including style tags." />
+                          placeholder={t("resumePlaceholder")} />
                         {resumeHtml ? (
                           <button type="button" className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                            aria-label="Clear resume HTML" disabled={busy} onClick={() => setResumeHtml("")}>
+                            aria-label={t("clearResume")} disabled={busy} onClick={() => setResumeHtml("")}>
                             <X className="size-3.5" />
                           </button>
                         ) : null}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {resumeHtml.length.toLocaleString()} / {MAX_RESUME_CHARS.toLocaleString()} characters
+                        {resumeHtml.length.toLocaleString()} / {MAX_RESUME_CHARS.toLocaleString()} {t("characters")}
                       </p>
                     </div>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button type="button" className="h-12 w-full sm:flex-1" disabled={!canRun} onClick={() => void actions.runPipeline()}>
-                            <Play className="size-4" /> {running ? "Running…" : "Run pipeline"}
+                            <Play className="size-4" /> {running ? t("running") : t("runPipeline")}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Start the resume rewrite generation processes</TooltipContent>
+                        <TooltipContent>{t("runPipelineTooltip")}</TooltipContent>
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button type="button" variant="outline" className="h-12" disabled={busy} onClick={actions.resetPipeline}>
-                            <RotateCcw className="size-4" /> Clear output
+                            <RotateCcw className="size-4" /> {t("clearOutput")}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Clear all inputs (Cannot undo!)</TooltipContent>
+                        <TooltipContent>{t("clearOutputTooltip")}</TooltipContent>
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button type="button" variant="ghost" className="h-12" disabled={pipelineLog.length === 0} onClick={async () => {
                             try {
                               await navigator.clipboard.writeText(pipelineLog.join("\n"));
-                              toast.success("Pipeline log copied.");
+                              toast.success(t("logCopied"));
                             } catch {
-                              toast.error("Could not copy log.");
+                              toast.error(t("logCopyFailed"));
                             }
                           }}>
-                            Copy log ({pipelineLog.length})
+                            {t("copyLog")} ({pipelineLog.length})
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>What the generation did in the background</TooltipContent>
+                        <TooltipContent>{t("copyLogTooltip")}</TooltipContent>
                       </Tooltip>
                     </div>
                     {!apiKey ? (
                       <p className="text-xs text-muted-foreground">
-                        A Gemini API key is required. Save one under API keys in the header.
+                        {t("apiKeyRequired")}
                       </p>
                     ) : null}
                   </CardContent>
@@ -341,7 +345,7 @@ export function HomePage() {
                   </Card>
                   <Card>
                     <CardHeader>
-                      <CardTitle>Output</CardTitle>
+                      <CardTitle>{t("output")}</CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 pt-0">
                       <OutputPanel
