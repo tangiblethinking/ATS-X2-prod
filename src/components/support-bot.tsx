@@ -138,6 +138,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [encouraging, setEncouraging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isBotTyping, setIsBotTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const hasKey = Boolean(apiKey);
@@ -157,10 +158,13 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     requestAnimationFrame(() => {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     });
-  }, [messages, open, step]);
+  }, [messages, open, step, isBotTyping]);
 
-  function pushBot(text: string, images?: string[]) {
+  async function pushBot(text: string, images?: string[]) {
+    setIsBotTyping(true);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), from: "bot", text, images }]);
+    setIsBotTyping(false);
   }
 
   function pushUser(text: string) {
@@ -249,6 +253,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                 onClick={async () => {
                   if (!hasKey || encouraging) return;
                   setEncouraging(true);
+                  setIsBotTyping(true);
                   let success = false;
                   const maxAttempts = 5;
                   for (let attempt = 1; attempt <= maxAttempts && !success; attempt++) {
@@ -331,6 +336,16 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                 )}
               </div>
             ))}
+
+            {isBotTyping && (
+              <div className="max-w-[85%] self-start rounded-2xl bg-muted px-3 py-2">
+                <div className="flex items-center gap-1">
+                  <span className="size-2 animate-bounce rounded-full bg-foreground/60 [animation-delay:-0.3s]" />
+                  <span className="size-2 animate-bounce rounded-full bg-foreground/60 [animation-delay:-0.15s]" />
+                  <span className="size-2 animate-bounce rounded-full bg-foreground/60" />
+                </div>
+              </div>
+            )}
 
             {STEPS[step]?.buttons && step !== "done" && (
               <div className="flex flex-wrap gap-2">
