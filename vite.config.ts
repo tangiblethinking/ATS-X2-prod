@@ -146,8 +146,8 @@ function authPopupPlugin(): Plugin {
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
 export default defineConfig(({ command, isPreview }) => ({
-  // Serve under /jobs so uxapex.com/jobs proxy works correctly.
-  base: "/jobs/",
+  // Serve at domain root so uxapex.com/job can proxy like /oma and other routes.
+  base: "/",
   server: {
     host: "0.0.0.0",
     port: 8080,
@@ -170,7 +170,7 @@ export default defineConfig(({ command, isPreview }) => ({
     tailwindcss(),
     tanstackStart({
       router: {
-        basepath: "/jobs",
+        basepath: "/",
       },
     }),
     ...(command === "build" || isPreview
