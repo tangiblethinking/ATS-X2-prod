@@ -91,7 +91,6 @@ export function HomePage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [convertingPdf, setConvertingPdf] = useState(false);
   const [pipelineLog, setPipelineLog] = useState<string[]>([]);
-  const [externalBotMessage, setExternalBotMessage] = useState<{ id: string; text: string } | null>(null);
 
   const busy = running || rewriting || customizing || generatingCover || convertingPdf;
 
@@ -127,7 +126,6 @@ export function HomePage() {
     keywords, setKeywords, finalHtml, setFinalHtml, coverHtml, setCoverHtml,
     setAudit, setStatuses, setDetails, busy, setRunning, setRewriting,
     setCustomizing, setGeneratingCover, setMode, idleStatuses, setPipelineLog,
-    onRewriteDiagnostic: (text) => setExternalBotMessage({ id: `rewrite-${Date.now()}`, text }),
   });
 
   async function onPickFile(file: File | undefined) {
@@ -385,7 +383,7 @@ export function HomePage() {
             />
           )}
         </main>
-        <SupportBot apiKey={apiKey} onApiKeyChange={setApiKey} externalBotMessage={externalBotMessage} />
+        <SupportBot apiKey={apiKey} onApiKeyChange={setApiKey} />
       </div>
     </TooltipProvider>
   );
