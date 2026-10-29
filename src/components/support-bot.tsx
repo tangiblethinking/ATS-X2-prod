@@ -3,7 +3,7 @@ import { MessageCircle, X, ChevronRight, Check, ChevronUp, ChevronDown, Language
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isPlausibleApiKey, saveApiKey } from "@/lib/api-key-store";
-import { getEncouragement } from "@/lib/optimize";
+import { getEncouragement, supportChat } from "@/lib/optimize";
 import { toast } from "sonner";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
@@ -228,17 +228,45 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     toast.success(t("geminiKeySaved"));
     pushUser(trimmed.slice(0, 8) + "… " + t("keyDetected"));
     pushBot({ textKey: "successReady" });
+    pushBot({ textKey: "liveChatReady" });
     setStep("done");
-    setTimeout(() => setOpen(false), 1800);
     return true;
   }
 
-  function onSend() {
+  async function onSend() {
     const text = draft.trim();
     if (!text) return;
     setDraft("");
     if (trySaveKey(text)) return;
     pushUser(text);
+
+    // Live Gemini chat once a key is saved
+    if (hasKey) {
+      setIsBotTyping(true);
+      try {
+        const history = messages
+          .slice(-6)
+          .map((m) => ({
+            role: m.from === "user" ? ("user" as const) : ("assistant" as const),
+            content: (m.text || (m.textKey ? t(m.textKey) : "")).slice(0, 4000),
+          }))
+          .filter((m) => m.content.trim().length > 0);
+
+        const result = await supportChat({
+          data: { apiKey, message: text, history },
+        });
+        if (result.ok && result.reply?.trim()) {
+          await pushBot({ text: result.reply.trim() });
+        } else {
+          await pushBot({ textKey: "liveChatError" });
+        }
+      } catch {
+        await pushBot({ textKey: "liveChatError" });
+      }
+      return;
+    }
+
+    // No key yet — keep the scripted help path
     pushBot({ textKey: "fallbackHelp" });
   }
 
@@ -246,7 +274,12 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          if (messages.length === 0) {
+            pushBot({ textKey: "liveChatReady" });
+          }
+        }}
         className="fixed bottom-4 right-4 z-50 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 sm:size-14"
         aria-label={t("openSupport")}
       >
@@ -406,6 +439,25 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                 ))}
               </div>
             )}
+
+            {hasKey && step === "done" && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => {
+                    setHasSelectedLanguage(true);
+                    setStep("welcome");
+                    pushBot({ textKey: "welcome" });
+                  }}
+                >
+                  {t("needKeyHelp")}
+                  <ChevronRight className="size-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
 
           <form
@@ -418,7 +470,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
             <Input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={t("pasteKeyPlaceholder")}
+              placeholder={hasKey ? t("askAnythingPlaceholder") : t("pasteKeyPlaceholder")}
               className="h-9 text-sm"
               autoComplete="off"
               spellCheck={false}
