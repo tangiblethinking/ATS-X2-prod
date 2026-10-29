@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, ChevronRight, Check, ChevronUp, ChevronDown, Languages } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { MessageCircle, X, ChevronRight, Check, ChevronUp, ChevronDown, Languages, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { isPlausibleApiKey, saveApiKey } from "@/lib/api-key-store";
 import { getEncouragement, supportChat } from "@/lib/optimize";
 import { toast } from "sonner";
@@ -141,6 +140,8 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
   const [step, setStep] = useState<Step>("welcome");
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [encouraging, setEncouraging] = useState(false);
@@ -236,6 +237,33 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     setStep("done");
     setInGuidedFlow(false);
     return true;
+  }
+
+  useEffect(() => {
+    const el = draftRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  }, [draft, open]);
+
+  async function copyMessage(id: string, value: string) {
+    if (!value.trim()) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedId(id);
+      window.setTimeout(() => {
+        setCopiedId((cur) => (cur === id ? null : cur));
+      }, 1400);
+    } catch {
+      toast.error("Could not copy that message.");
+    }
+  }
+
+  function onDraftKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      onSend();
+    }
   }
 
   async function onSend() {
@@ -380,14 +408,14 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
 
           <div
             ref={scrollRef}
-            className={`flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3 text-sm ${
+            className={`flex flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-3 py-3 text-sm ${
               isExpanded ? "" : "max-h-80"
             }`}
           >
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                className={`relative min-w-0 max-w-[85%] overflow-hidden rounded-2xl px-3 py-2 pr-8 ${
                   m.from === "bot"
                     ? "self-start bg-muted text-foreground"
                     : "self-end bg-primary text-primary-foreground"
@@ -399,9 +427,26 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                     <LanguageSelector variant="inline" />
                   </div>
                 ) : (
-                  <div className="whitespace-pre-wrap">
+                  <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                     {renderMessageText(m.textKey ? t(m.textKey) : m.text || "", t)}
                   </div>
+                )}
+                {!m.isLanguageSelect && (
+                  <button
+                    type="button"
+                    className={`absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md ${
+                      m.from === "bot"
+                        ? "text-muted-foreground hover:bg-background/70"
+                        : "text-primary-foreground/80 hover:bg-primary-foreground/15"
+                    }`}
+                    aria-label="Copy message"
+                    title="Copy"
+                    onClick={() =>
+                      copyMessage(m.id, m.textKey ? t(m.textKey) : m.text || "")
+                    }
+                  >
+                    {copiedId === m.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  </button>
                 )}
                 {m.images && m.images.length > 0 && (
                   <div className="mt-2 flex flex-col gap-2">
@@ -472,21 +517,31 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
           </div>
 
           <form
-            className="flex gap-2 border-t border-border p-2"
+            className="flex items-end gap-2 border-t border-border p-2"
             onSubmit={(e) => {
               e.preventDefault();
               onSend();
             }}
           >
-            <Input
+            <textarea
+              ref={draftRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onDraftKeyDown}
               placeholder={hasKey ? t("askAnythingPlaceholder") : t("pasteKeyPlaceholder")}
-              className="h-9 text-sm"
+              rows={1}
+              className="min-h-9 max-h-36 w-full flex-1 resize-none overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-input bg-background px-3 py-2 text-sm leading-5 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring [overflow-wrap:anywhere]"
               autoComplete="off"
               spellCheck={false}
             />
-            <Button type="submit" size="sm" className="h-9" disabled={!draft.trim()}>
+            <Button
+              type="submit"
+              size="sm"
+              className="h-9 shrink-0"
+              disabled={!draft.trim()}
+              title="Send (⌘/Ctrl+Enter)"
+              aria-label="Send message"
+            >
               <Check className="size-4" />
             </Button>
           </form>
