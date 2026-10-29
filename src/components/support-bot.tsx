@@ -415,7 +415,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`grid w-full min-w-0 max-w-[85%] grid-cols-[minmax(0,1fr)_auto] items-start gap-1.5 rounded-2xl px-3 py-2 ${
+                className={`grid w-full min-w-0 max-w-[85%] grid-cols-[minmax(0,1fr)_auto] items-stretch gap-1.5 rounded-2xl px-3 py-2 ${
                   m.from === "bot"
                     ? "self-start bg-muted text-foreground"
                     : "self-end bg-primary text-primary-foreground"
@@ -453,21 +453,23 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                 )}
                 </div>
                 {!m.isLanguageSelect && (
-                  <button
-                    type="button"
-                    className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md ${
-                      m.from === "bot"
-                        ? "text-muted-foreground hover:bg-background/80"
-                        : "text-primary-foreground/80 hover:bg-primary-foreground/15"
-                    }`}
-                    aria-label="Copy message"
-                    title="Copy"
-                    onClick={() =>
-                      copyMessage(m.id, m.textKey ? t(m.textKey) : m.text || "")
-                    }
-                  >
-                    {copiedId === m.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  </button>
+                  <div className="relative w-6 self-stretch">
+                    <button
+                      type="button"
+                      className={`sticky top-1 z-10 flex size-6 items-center justify-center rounded-md ${
+                        m.from === "bot"
+                          ? "bg-muted text-muted-foreground hover:bg-background/80"
+                          : "bg-primary text-primary-foreground/90 hover:bg-primary-foreground/15"
+                      }`}
+                      aria-label="Copy message"
+                      title="Copy"
+                      onClick={() =>
+                        copyMessage(m.id, m.textKey ? t(m.textKey) : m.text || "")
+                      }
+                    >
+                      {copiedId === m.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
