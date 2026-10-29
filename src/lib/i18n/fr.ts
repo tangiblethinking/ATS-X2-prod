@@ -84,5 +84,6 @@ export const fr: Record<TranslationKey, string> = {
   askAnythingPlaceholder: "Posez-moi une question…",
   liveChatError: "Impossible de joindre Gemini pour le moment. Réessayez dans un instant.",
   needKeyHelp: "Besoin d'aide pour une clé ?",
+  getMyKey: "Obtenir ma clé",
   close: "Fermer",
 };

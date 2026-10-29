@@ -146,6 +146,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
   const [encouraging, setEncouraging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isBotTyping, setIsBotTyping] = useState(false);
+  const [inGuidedFlow, setInGuidedFlow] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const hasKey = Boolean(apiKey);
@@ -230,6 +231,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     pushBot({ textKey: "successReady" });
     pushBot({ textKey: "liveChatReady" });
     setStep("done");
+    setInGuidedFlow(false);
     return true;
   }
 
@@ -256,7 +258,8 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
           data: { apiKey, message: text, history },
         });
         if (result.ok && result.reply?.trim()) {
-          await pushBot({ text: result.reply.trim() });
+          const plain = result.reply.trim().replace(/\*\*/g, "").replace(/^\s*[-*]\s+/gm, "");
+          await pushBot({ text: plain });
         } else {
           await pushBot({ textKey: "liveChatError" });
         }
@@ -422,7 +425,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
               </div>
             )}
 
-            {STEPS[step]?.buttons && step !== "done" && hasSelectedLanguage && (
+            {STEPS[step]?.buttons && step !== "done" && hasSelectedLanguage && (!hasKey || inGuidedFlow) && (
               <div className="flex flex-wrap gap-2">
                 {STEPS[step].buttons!.map((b) => (
                   <Button
@@ -440,7 +443,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
               </div>
             )}
 
-            {hasKey && step === "done" && (
+            {hasKey && !inGuidedFlow && (
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -449,11 +452,11 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                   className="h-8"
                   onClick={() => {
                     setHasSelectedLanguage(true);
-                    setStep("welcome");
-                    pushBot({ textKey: "welcome" });
+                    setInGuidedFlow(true);
+                    goTo("tip");
                   }}
                 >
-                  {t("needKeyHelp")}
+                  {t("getMyKey")}
                   <ChevronRight className="size-3.5" />
                 </Button>
               </div>

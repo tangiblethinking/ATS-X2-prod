@@ -84,5 +84,6 @@ export const zh: Record<TranslationKey, string> = {
   askAnythingPlaceholder: "问我任何问题…",
   liveChatError: "暂时无法连接到 Gemini。请稍后再试。",
   needKeyHelp: "需要密钥帮助？",
+  getMyKey: "获取我的密钥",
   close: "关闭",
 };

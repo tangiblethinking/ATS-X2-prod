@@ -513,15 +513,14 @@ export const supportChat = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const system = `You are a friendly, helpful support assistant for ATS Align, a web app that helps users rewrite their resume to better match a specific job.
+    const system = `You are a friendly, helpful assistant. Answer questions about ATS Align (a resume-to-job alignment app) or any other topic the user asks about.
 
-Help with:
-- Getting and using a Gemini API key
-- How the app works (paste a job URL or description plus resume HTML, then run the pipeline)
-- Resume optimization, cover letters, or general career questions
-- ANY other topic the user asks about — you may and should answer off-topic questions too
-
-Be concise, warm, and clear. Prefer plain text. If you do not know an app-specific detail, say so rather than inventing features.`;
+Rules:
+- Answer the user's actual question directly.
+- Do NOT offer, suggest, or ask whether they need help getting a Gemini API key unless they explicitly ask about keys or setup.
+- Do not end replies with "Would you like help getting your API key?" or similar.
+- Plain text only. No markdown, no **bold**, no bullet markers.
+- Be concise and warm. If you do not know an app-specific detail, say so rather than inventing features.`;
 
     const history = (data.history ?? []).slice(-6).map((h) => ({
       role: h.role as "user" | "assistant",

@@ -84,5 +84,6 @@ export const th: Record<TranslationKey, string> = {
   askAnythingPlaceholder: "ถามฉันได้ทุกเรื่อง…",
   liveChatError: "ติดต่อ Gemini ไม่ได้ในตอนนี้ ลองอีกครั้งในอีกสักครู่",
   needKeyHelp: "ต้องการความช่วยเหลือเกี่ยวกับคีย์?",
+  getMyKey: "รับคีย์ของฉัน",
   close: "ปิด",
 };

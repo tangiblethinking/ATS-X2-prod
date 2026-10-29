@@ -84,5 +84,6 @@ export const ja: Record<TranslationKey, string> = {
   askAnythingPlaceholder: "何でも聞いてください…",
   liveChatError: "今 Gemini に接続できませんでした。少し待ってからもう一度お試しください。",
   needKeyHelp: "キーのヘルプが必要？",
+  getMyKey: "キーを取得",
   close: "閉じる",
 };

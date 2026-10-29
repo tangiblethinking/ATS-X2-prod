@@ -95,6 +95,7 @@ export const en = {
   askAnythingPlaceholder: "Ask me anything…",
   liveChatError: "I couldn't reach Gemini just now. Please try again in a moment.",
   needKeyHelp: "Need help with a key?",
+  getMyKey: "Get my key",
 
   // Common
   close: "Close",
