@@ -345,11 +345,13 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
 
       {open && (
         <div
-          className={`fixed bottom-4 right-4 z-50 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:w-96 ${
-            isExpanded ? "top-4" : ""
+          className={`fixed right-4 z-50 flex w-[min(100vw-2rem,22rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:w-96 ${
+            isExpanded
+              ? "bottom-4 top-4 h-[calc(100dvh-2rem)]"
+              : "bottom-4 h-[min(32rem,calc(100dvh-2rem))]"
           }`}
         >
-          <header className="flex items-center justify-between gap-2 border-b border-neutral-800 bg-black px-3 py-2">
+          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-neutral-800 bg-black px-3 py-2">
             <div className="flex items-center gap-2">
               <div
                 className="relative size-10 sm:size-12 shrink-0 cursor-pointer"
@@ -408,46 +410,30 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
 
           <div
             ref={scrollRef}
-            className={`flex flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-3 py-3 text-sm ${
-              isExpanded ? "" : "max-h-80"
-            }`}
+            className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3 text-sm"
           >
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`relative min-w-0 max-w-[85%] overflow-hidden rounded-2xl px-3 py-2 pr-8 ${
+                className={`grid w-full min-w-0 max-w-[85%] grid-cols-[minmax(0,1fr)_auto] items-start gap-1.5 rounded-2xl px-3 py-2 ${
                   m.from === "bot"
                     ? "self-start bg-muted text-foreground"
                     : "self-end bg-primary text-primary-foreground"
                 }`}
               >
-                {m.isLanguageSelect ? (
-                  <div className="flex flex-col gap-2">
-                    <div>{t("pleaseSelectLanguage")}</div>
-                    <LanguageSelector variant="inline" />
-                  </div>
-                ) : (
-                  <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                    {renderMessageText(m.textKey ? t(m.textKey) : m.text || "", t)}
-                  </div>
-                )}
-                {!m.isLanguageSelect && (
-                  <button
-                    type="button"
-                    className={`absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md ${
-                      m.from === "bot"
-                        ? "text-muted-foreground hover:bg-background/70"
-                        : "text-primary-foreground/80 hover:bg-primary-foreground/15"
-                    }`}
-                    aria-label="Copy message"
-                    title="Copy"
-                    onClick={() =>
-                      copyMessage(m.id, m.textKey ? t(m.textKey) : m.text || "")
-                    }
-                  >
-                    {copiedId === m.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  </button>
-                )}
+                <div className="min-w-0 flex-1">
+                  {m.isLanguageSelect ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                        {t("pleaseSelectLanguage")}
+                      </div>
+                      <LanguageSelector variant="inline" />
+                    </div>
+                  ) : (
+                    <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                      {renderMessageText(m.textKey ? t(m.textKey) : m.text || "", t)}
+                    </div>
+                  )}
                 {m.images && m.images.length > 0 && (
                   <div className="mt-2 flex flex-col gap-2">
                     {m.images.map((src, idx) => (
@@ -464,6 +450,24 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
                       />
                     ))}
                   </div>
+                )}
+                </div>
+                {!m.isLanguageSelect && (
+                  <button
+                    type="button"
+                    className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md ${
+                      m.from === "bot"
+                        ? "text-muted-foreground hover:bg-background/80"
+                        : "text-primary-foreground/80 hover:bg-primary-foreground/15"
+                    }`}
+                    aria-label="Copy message"
+                    title="Copy"
+                    onClick={() =>
+                      copyMessage(m.id, m.textKey ? t(m.textKey) : m.text || "")
+                    }
+                  >
+                    {copiedId === m.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  </button>
                 )}
               </div>
             ))}
@@ -517,7 +521,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
           </div>
 
           <form
-            className="flex items-end gap-2 border-t border-border p-2"
+            className="flex shrink-0 items-end gap-2 border-t border-border p-2"
             onSubmit={(e) => {
               e.preventDefault();
               onSend();
