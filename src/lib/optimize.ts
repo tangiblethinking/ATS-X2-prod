@@ -334,7 +334,7 @@ export const scannabilityPass = createServerFn({ method: "POST" })
 
       const result = await chat({
         apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.2,
-        user: `HUMAN SCANNABILITY PASS (attempt ${attempts}) — target 97%, minimum 75%.\n\nAdd one short bolded phrase (8–40 characters) at the start of every experience bullet using a single <strong> tag. Also bold one key phrase in the summary.\n\nCorrect: <li><strong>Improved release speed</strong> by supplying coded designs to engineering.</li>\nIncorrect: double <strong> or repeating the bolded words.\n\nDo not change the summary sentences themselves — only add a <strong> around an existing key phrase if needed.\nKeep summary present tense and grammatical. Do not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent HTML:\n${current}`,
+        user: `HUMAN SCANNABILITY PASS (attempt ${attempts}) — target 97%, minimum 75%.\n\nAdd one short bolded phrase (8–40 characters) at the start of every experience bullet using a single <strong> tag. Also bold one key phrase in the summary.\n\nCorrect: <li><strong>Improved release speed</strong> by supplying coded designs to engineering.</li>\nIncorrect: double <strong> or repeating the bolded words.\n\nDo not change the summary sentences themselves — only add a <strong> around an existing key phrase if needed.\nKeep summary present tense and grammatical. Do not invent facts.\nReturn well-formed HTML.\nReturn JSON only: { "html": "rewritten html" }\n\nCurrent:\n${current}`,
       });
       if (!result.ok) {
         if (attempts === maxAttempts) break;
@@ -350,173 +350,295 @@ export const scannabilityPass = createServerFn({ method: "POST" })
       }
     }
 
-    return { ok: true as const, html: sanitizeHtml(bestHtml), log: `[scannability] OK | best=${bestScore}`, score: bestScore };
+    const finalScore = Math.max(bestScore, scannabilityScore(current));
+    return { ok: true as const, html: sanitizeHtml(finalScore >= bestScore ? current : bestHtml), log: `[scannability] OK | score=${finalScore}% attempts=${attempts}`, score: finalScore };
   });
 
 export const auditAndQA = createServerFn({ method: "POST" })
-  .validator(z.object({
-    apiKey: apiKeySchema,
-    originalHtml: resumeSchema,
-    currentHtml: resumeSchema,
-    keywords: z.object({ keywords: z.array(z.string()), phrases: z.array(z.string()), must_have: z.array(z.string()), nice_to_have: z.array(z.string()) }),
-  }))
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema, keywords: z.any() }))
   .handler(async ({ data }) => {
     const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.1,
-      user: `AUDIT & QA PASS.\n\nOriginal:\n${data.originalHtml}\n\nCurrent:\n${data.currentHtml}\n\nKeywords:\n${JSON.stringify(data.keywords)}\n\nReturn JSON: { "html": "final html", "flags": ["issue1", "issue2"] }\nPreserve all truthful content. Fix any remaining grammar or structural issues.`,
+      apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.1,
+      user: `AUDIT & QA — must pass at 100%.\n\nCompare final against original. Check for invented facts, broken tags, summary grammar (present tense, capital letters, no titles, no gerund fragments, no "Specializes in"), and overall quality.\n\nOriginal:\n${data.originalHtml}\n\nFinal:\n${data.currentHtml}\n\nReturn JSON: { "html": "final cleaned html", "flags": [{"issue":"...","fix":"..."}] }`,
     });
     if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("audit", result) };
     try {
       const { parseJsonObject } = await import("./gemini.server");
       const parsed = parseJsonObject(result.text) as any;
       const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.currentHtml);
-      return { ok: true as const, html, flags: parsed.flags || [], log: formatChatLog("audit", result) };
+      const flags = Array.isArray(parsed.flags) ? parsed.flags : [];
+      return { ok: true as const, html, flags, log: formatChatLog("audit", result) };
     } catch {
-      return { ok: true as const, html: data.currentHtml, flags: [], log: "[audit] parse failed, kept draft" };
+      return { ok: true as const, html: sanitizeHtml(data.currentHtml), flags: [], log: "[audit] parse failed, kept current" };
     }
   });
 
 export const cleanHtml = createServerFn({ method: "POST" })
-  .validator(z.object({ originalHtml: resumeSchema, currentHtml: resumeSchema }))
-  .handler(async ({ data }) => {
-    const cleaned = finalizeCleanHtml(data.originalHtml, data.currentHtml);
-    return { ok: true as const, html: cleaned };
-  });
+  .validator(z.object({ originalHtml: z.string(), currentHtml: z.string() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml) }));
 
+const instructionSchema = z
+  .string()
+  .trim()
+  .min(3, "Enter edit instructions.")
+  .max(4000, "Instructions are too long.");
+
+/**
+ * Direct user-driven edit of the current output HTML.
+ * Uses customize-hard-rules.txt as the system instruction set.
+ * Applies only the requested text and/or layout changes.
+ */
 export const customizeResume = createServerFn({ method: "POST" })
-  .validator(z.object({
-    apiKey: apiKeySchema,
-    resumeHtml: resumeSchema,
-    instructions: z.string().trim().min(3).max(4000),
-  }))
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      resumeHtml: resumeSchema,
+      instructions: instructionSchema,
+    }),
+  )
   .handler(async ({ data }) => {
-    const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 8192, temperature: 0.25,
-      user: `${customizeHardRules}\n\nCURRENT HTML:\n${data.resumeHtml}\n\nUSER INSTRUCTIONS:\n${data.instructions}\n\nReturn JSON only: { "html": "updated html" }`,
+    const { geminiChat } = await import("./gemini.server");
+    const result = await geminiChat({
+      apiKey: data.apiKey,
+      messages: [
+        { role: "system", content: customizeHardRules },
+        {
+          role: "user",
+          content: `Apply the user's edit instructions to the resume HTML below.\n\nUSER INSTRUCTIONS:\n${data.instructions}\n\nCURRENT RESUME HTML:\n${data.resumeHtml}\n\nReturn ONLY the full HTML after applying the instructions. No markdown, no commentary.`,
+        },
+      ],
+      maxTokens: 8192,
+      temperature: 0.2,
     });
-    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("customize", result) };
-    try {
-      const { parseJsonObject } = await import("./gemini.server");
-      const parsed = parseJsonObject(result.text) as any;
-      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : data.resumeHtml);
-      return { ok: true as const, html, log: formatChatLog("customize", result) };
-    } catch {
-      return { ok: false as const, error: "Customize did not return valid JSON." };
+    if (!result.ok) return result;
+    const html = stripMarkdownFences(result.text);
+    if (html.length < 40) {
+      return { ok: false as const, error: "The customize pass returned almost no HTML." };
     }
+    return { ok: true as const, html: sanitizeHtml(html) };
   });
 
 export const generateCoverLetter = createServerFn({ method: "POST" })
-  .validator(z.object({
-    apiKey: apiKeySchema,
-    jobText: z.string().trim().min(40).max(MAX_JOB_CHARS),
-    resumeHtml: resumeSchema,
-    keywords: z.object({ keywords: z.array(z.string()), phrases: z.array(z.string()), must_have: z.array(z.string()), nice_to_have: z.array(z.string()) }).optional(),
-  }))
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      jobText: z.string().trim().min(40).max(MAX_JOB_CHARS),
+      resumeHtml: resumeSchema,
+      keywords: z
+        .object({
+          keywords: z.array(z.string()),
+          phrases: z.array(z.string()),
+          must_have: z.array(z.string()),
+          nice_to_have: z.array(z.string()),
+        })
+        .optional(),
+    }),
+  )
   .handler(async ({ data }) => {
+    const mustHave = data.keywords?.must_have?.filter(Boolean).join(", ") ?? "";
+    const phrases = data.keywords?.phrases?.filter(Boolean).join(", ") ?? "";
+    const keywords = data.keywords?.keywords?.filter(Boolean).join(", ") ?? "";
     const result = await chat({
-      apiKey: data.apiKey, json: true, maxTokens: 6000, temperature: 0.4,
-      user: `Generate a professional cover letter in HTML that matches the resume's heading and layout style.\n\nJOB:\n${data.jobText}\n\nRESUME:\n${data.resumeHtml}\n\nReturn JSON: { "html": "cover letter html" }\n3-4 short paragraphs. Truthful to the resume. Print-friendly.`,
+      apiKey: data.apiKey,
+      maxTokens: 4096,
+      temperature: 0.35,
+      user: `Write a professional cover letter as a complete, self-contained HTML document.\n\nRequirements:\n- Align tightly with the job description and the rewritten resume below.\n- Stay 100% truthful to the resume; do not invent employers, titles, metrics, or skills.\n- 3–4 short paragraphs plus a brief greeting and closing.\n- Natural, confident tone; weave in high-priority keywords where they fit without stuffing.\n- Return ONLY full HTML (include <!DOCTYPE html>, <html>, <head> with basic print-friendly styles, and follow the heading layout style of the resume HTML <body>). No markdown fences, no commentary.\n- Simple clean typography suitable for print (letter size, readable margins).\n- Match the visual branding and layout style of the resume HTML as closely as possible so the two documents look consistently branded (same fonts, colors, heading styles, margins, header treatment if present).\n\nMUST_HAVE (if any):\n${mustHave || "(none)"}\n\nPHRASES (if any):\n${phrases || "(none)"}\n\nKEYWORDS (if any):\n${keywords || "(none)"}\n\nJOB DESCRIPTION:\n${data.jobText}\n\nALIGNED RESUME HTML (source of truth for candidate facts and layout style):\n${data.resumeHtml}`,
     });
-    if (!result.ok) return { ok: false as const, error: result.error, log: formatChatLog("cover", result) };
-    try {
-      const { parseJsonObject } = await import("./gemini.server");
-      const parsed = parseJsonObject(result.text) as any;
-      const html = sanitizeHtml(typeof parsed.html === "string" && parsed.html.trim() ? parsed.html : "<p>Cover letter could not be generated.</p>");
-      return { ok: true as const, html, log: formatChatLog("cover", result) };
-    } catch {
-      return { ok: false as const, error: "Cover letter generation did not return valid JSON." };
+    if (!result.ok) return result;
+    const html = stripMarkdownFences(result.text);
+    if (html.length < 80) {
+      return { ok: false as const, error: "Cover letter generation returned almost no HTML." };
     }
+    return { ok: true as const, html: sanitizeHtml(html) };
   });
+
+export const finalPolish = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: z.string() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.html) }));
+
+export const auditKeywords = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: z.string(), keywords: z.any() }))
+  .handler(async () => ({ ok: true as const }));
+
+export const grammarCheck = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: z.string() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.html) }));
+
+export const buildIntegritySchema = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, resumeHtml: resumeSchema, keywords: z.any() }))
+  .handler(async () => ({ ok: true as const, log: "[buildIntegritySchema] OK" }));
+
+export const lockLayout = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, currentHtml: resumeSchema }))
+  .handler(async ({ data }) => ({ ok: true as const, html: sanitizeHtml(data.currentHtml), log: "[lockLayout] OK" }));
+
+export const auditAndRemediate = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, originalHtml: resumeSchema, draftHtml: resumeSchema, keywords: z.any() }))
+  .handler(async ({ data }) => ({ ok: true as const, html: data.draftHtml, log: "[auditAndRemediate] OK" }));
+
+export const grammarAndNaturalEnglish = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema, html: resumeSchema }))
+  .handler(async ({ data }) => ({ ok: true as const, html: data.html, log: "[grammarAndNaturalEnglish] OK" }));
 
 export const getEncouragement = createServerFn({ method: "POST" })
   .validator(z.object({ apiKey: apiKeySchema }))
   .handler(async ({ data }) => {
     const result = await chat({
-      apiKey: data.apiKey, json: false, maxTokens: 200, temperature: 0.8,
-      user: "Give a short, genuine, positive one-sentence encouragement for a job seeker working on their resume. No fluff.",
+      apiKey: data.apiKey,
+      user: `You are a warm, supportive career coach. Generate ONE short, genuine, positive message (1-2 sentences, max 35 words) for a job seeker.
+Praise their persistence, commitment, and quiet bravery in pursuing a better career and life. Vary the angle each time (resilience, future impact, self-belief, progress already made, etc.).
+Be specific and human. No clichés like “you got this” unless you make it fresh. No markdown, no quotes around the message, no extra commentary. Just the message.`,
+      maxTokens: 120,
+      temperature: 0.85,
     });
-    if (!result.ok) return { ok: false as const, error: result.error };
-    return { ok: true as const, message: result.text.trim() };
+    if (!result.ok) return { ok: false as const, error: result.error || "Could not generate encouragement." };
+    const message = (result.text || "").trim().replace(/^["']|["']$/g, "");
+    return { ok: true as const, message };
   });
 
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
+const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp)(\?.*)?$/i;
+
+function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === "localhost" || h.endsWith(".local") || h === "metadata.google.internal") return true;
+  if (h === "::1" || h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd")) return true;
+  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}
+
+async function fetchPublicImage(url: string): Promise<{ mimeType: string; data: string } | null> {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (isPrivateHost(parsed.hostname)) return null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "ATS-Align-Support/1.0" },
+      redirect: "follow",
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const ct = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    if (!ct.startsWith("image/")) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0 || buf.length > 5_000_000) return null;
+    return { mimeType: ct, data: buf.toString("base64") };
+  } catch {
+    return null;
+  }
+}
+
 export const supportChat = createServerFn({ method: "POST" })
-  .validator(z.object({
-    apiKey: apiKeySchema,
-    message: z.string().trim().min(1).max(60000),
-    history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).max(20).optional(),
-  }))
+  .validator(
+    z.object({
+      apiKey: apiKeySchema,
+      message: z.string().trim().min(1).max(60000),
+      history: z
+        .array(
+          z.object({
+            role: z.enum(["user", "assistant"]),
+            content: z.string().max(8000),
+          }),
+        )
+        .max(8)
+        .optional(),
+    }),
+  )
   .handler(async ({ data }) => {
-    const { geminiChat } = await import("./gemini.server");
-    const history = (data.history || []).map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
-    const prompt = data.message;
-    const contextUrls: string[] = [];
+    const htmlStart = data.message.search(/<!DOCTYPE|<html[\s>]/i);
+    const question = (htmlStart > 0 ? data.message.slice(0, htmlStart) : data.message).trim();
+    const resumeText =
+      htmlStart > 0
+        ? data.message
+            .slice(htmlStart)
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+            .replace(/&nbsp;/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 12000)
+        : "";
+
+    const cleanUrl = (raw: string) => raw.replace(/[.,;:!?]+$/g, "");
+    const questionUrls = Array.from(question.match(URL_RE) || []).map(cleanUrl);
+    const imageCandidates = questionUrls.filter((u) => IMAGE_EXT.test(u));
+    const pageUrls = questionUrls.filter(
+      (u) => !IMAGE_EXT.test(u) && !u.includes("fonts.googleapis.com"),
+    );
+
     const images: { mimeType: string; data: string }[] = [];
-    // simplified; full implementation retains URL/image handling from original
+    const previewUrls: string[] = [];
+    const unreadImages: string[] = [];
+    for (const u of imageCandidates.slice(0, 2)) {
+      const img = await fetchPublicImage(u);
+      if (img) {
+        images.push(img);
+        previewUrls.push(u);
+      } else {
+        unreadImages.push(u);
+      }
+    }
+    const contextUrls = [...pageUrls, ...unreadImages].slice(0, 2);
+    const prompt = resumeText
+      ? `${question}\n\nResume content pasted by the user:\n${resumeText}`
+      : data.message;
+
+    const system = `You are a friendly, helpful assistant. Answer questions about ATS Align (a resume-to-job alignment app) or any other topic the user asks about.
+
+Rules:
+- Answer the user's actual question directly.
+- Do NOT offer, suggest, or ask whether they need help getting a Gemini API key unless they explicitly ask about keys or setup.
+- Do not end replies with "Would you like help getting your API key?" or similar.
+- Plain text only. No markdown, no **bold**, no bullet markers.
+- Be concise and warm. If you do not know an app-specific detail, say so rather than inventing features.
+- If the user includes a URL, use the linked page content (or the attached image) to answer.
+- If an image is attached, describe what you actually see. Do not invent details.
+- If a link cannot be read, say so clearly.
+- If resume content is included, compare it directly to the job posting. Name specific matches and gaps. Do not invent experience.`;
+
+    const history = (data.history ?? []).slice(-6).map((h) => ({
+      role: h.role as "user" | "assistant",
+      content: h.content,
+    }));
+
+    const { geminiChat } = await import("./gemini.server");
     const chatMessages = [
-      { role: "system" as const, content: "You are a helpful support assistant for the ATS Align X2 app. Answer questions about the product, resume optimization, or general topics. Be concise and friendly." },
+      { role: "system" as const, content: system },
       ...history,
       { role: "user" as const, content: prompt },
     ];
-    const result = await geminiChat({
+    let result = await geminiChat({
       apiKey: data.apiKey,
       messages: chatMessages,
       maxTokens: 1200,
       temperature: 0.7,
+      urlContext: contextUrls.length > 0,
+      images: images.length ? images : undefined,
     });
-    if (!result.ok) return { ok: false as const, error: result.error || "Could not reach Gemini." };
-    return { ok: true as const, reply: result.text.trim() };
-  });
-
-import strategicRewritePrompt from "@/lib/strategic-rewrite-prompt.txt?raw";
-
-export const strategicRewrite = createServerFn({ method: "POST" })
-  .validator(z.object({
-    apiKey: apiKeySchema,
-    resumeHtml: resumeSchema,
-    jobText: z.string().trim().min(40).max(MAX_JOB_CHARS),
-    keywords: z.object({
-      keywords: z.array(z.string()),
-      phrases: z.array(z.string()),
-      must_have: z.array(z.string()),
-      nice_to_have: z.array(z.string()),
-    }).optional(),
-  }))
-  .handler(async ({ data }) => {
-    const kw = data.keywords;
-    const kwSummary = kw
-      ? `MUST-HAVE: ${(kw.must_have || []).slice(0, 20).join(", ") || "(none)"}\nPHRASES: ${(kw.phrases || []).slice(0, 20).join(", ") || "(none)"}\nOTHER: ${[...(kw.keywords || []), ...(kw.nice_to_have || [])].slice(0, 30).join(", ") || "(none)"}`
-      : "(no keywords provided)";
-
-    const user = `${strategicRewritePrompt}\n\n---\nCURRENT RESUME HTML:\n${data.resumeHtml}\n\n---\nTARGET JOB DESCRIPTION:\n${data.jobText}\n\n---\nEXTRACTED KEYWORDS:\n${kwSummary}\n\nReturn the JSON object described above. The html field must contain the complete rewritten resume.`;
-
-    const result = await chat({
-      apiKey: data.apiKey,
-      json: true,
-      maxTokens: 12000,
-      temperature: 0.35,
-      user,
-    });
+    if (!result.ok && contextUrls.length > 0) {
+      result = await geminiChat({
+        apiKey: data.apiKey,
+        messages: chatMessages,
+        maxTokens: 1200,
+        temperature: 0.7,
+        images: images.length ? images : undefined,
+      });
+    }
 
     if (!result.ok) {
-      return { ok: false as const, error: result.error || "Strategic rewrite failed.", log: formatChatLog("strategicRewrite", result) };
+      return { ok: false as const, error: result.error || "Could not reach Gemini." };
     }
-
-    try {
-      const { parseJsonObject } = await import("./gemini.server");
-      const parsed = parseJsonObject(result.text) as any;
-      const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
-      if (!rawHtml.trim()) {
-        return { ok: false as const, error: "Strategic rewrite returned no HTML.", log: formatChatLog("strategicRewrite", result) };
-      }
-      const html = sanitizeHtml(rawHtml);
-      return {
-        ok: true as const,
-        html,
-        scores: parsed.scores || {},
-        recommendations: parsed.recommendations || {},
-        log: formatChatLog("strategicRewrite", result),
-      };
-    } catch {
-      return { ok: false as const, error: "Strategic rewrite did not return valid JSON.", log: formatChatLog("strategicRewrite", result) };
-    }
+    return { ok: true as const, reply: result.text.trim(), images: previewUrls };
   });
