@@ -15,7 +15,6 @@ import {
   rewriteResume,
   scannabilityPass,
   terminologyPass,
-  strategicRewrite,
 } from "@/lib/optimize";
 import type { JobResult } from "@/lib/job-search";
 import {
@@ -54,14 +53,12 @@ export function usePipelineActions(opts: {
   setMode: (v: "pipeline" | "search") => void;
   idleStatuses: () => Record<StepId, StepStatus>;
   setPipelineLog?: (updater: (prev: string[]) => string[]) => void;
-  onRewriteDiagnostic?: (text: string) => void;
 }) {
   const {
     apiKey, jobUrl, setJobUrl, jobText, setJobText, resumeHtml,
     keywords, setKeywords, finalHtml, setFinalHtml, coverHtml, setCoverHtml,
     setAudit, setStatuses, setDetails, busy, setRunning, setRewriting,
     setCustomizing, setGeneratingCover, setMode, idleStatuses, setPipelineLog,
-    onRewriteDiagnostic,
   } = opts;
 
   const mark = useCallback((id: StepId, status: StepStatus, detail?: string) => {
@@ -223,61 +220,30 @@ export function usePipelineActions(opts: {
     if (busy) { toastBusy(); return; }
     if (!finalHtml) { toast.error("Run the pipeline first so there is output to rewrite."); return; }
     if (!isPlausibleApiKey(apiKey)) { toast.error("Save a Gemini API key first."); return; }
-    const job = jobText.trim();
-    if (job.length < 40) { toast.error("Job description text is too short for strategic rewrite."); return; }
     setRewriting(true);
     try {
       let kw = keywords;
       if (!kw || (kw.keywords.length === 0 && kw.phrases.length === 0 && kw.must_have.length === 0 && kw.nice_to_have.length === 0)) {
+        const job = jobText.trim();
+        if (job.length < 40) {
+          toast.error("Keywords are missing and the job description text is too short to re-extract.");
+          return;
+        }
         const extracted = await extractKeywords({ data: { apiKey, jobText: job } });
         if (!extracted.ok) { toast.error(extracted.error); return; }
         kw = extracted.keywords;
         setKeywords(kw);
       }
-      const result = await strategicRewrite({
-        data: { apiKey, resumeHtml: finalHtml, jobText: job, keywords: kw ?? undefined },
-      });
-      if (!result.ok) { toast.error(result.error); return; }
-      setFinalHtml(result.html);
-
-      // Format diagnostic for support bot
-      const scores = result.scores || {};
-      const recs = result.recommendations || {};
-      const lines = ["**ATS Strategic Rewrite complete**\n"];
-      lines.push("**Scores**");
-      const scoreKeys = [
-        ["ats_engine_readiness", "ATS Engine Readiness"],
-        ["job_alignment", "Job Description Alignment"],
-        ["ai_content_risk", "AI Content Risk"],
-        ["human_review_pass_rate", "Human Review Pass Rate"],
-        ["human_scannability", "Human Scannability"],
-      ] as const;
-      for (const [k, label] of scoreKeys) {
-        const s = (scores as any)[k];
-        if (s && typeof s.score === "number") {
-          lines.push(`• ${label}: **${s.score.toFixed(1)}** — ${s.justification || ""}`);
-        }
-      }
-      lines.push("\n**Recommendations**");
-      if (Array.isArray(recs.ats_technical) && recs.ats_technical.length) {
-        lines.push("*ATS & Technical:*\n" + recs.ats_technical.map((r: string) => `  • ${r}`).join("\n"));
-      }
-      if (Array.isArray(recs.content_impact) && recs.content_impact.length) {
-        lines.push("*Content & Impact:*\n" + recs.content_impact.map((r: string) => `  • ${r}`).join("\n"));
-      }
-      if (Array.isArray(recs.tonality_rhythm) && recs.tonality_rhythm.length) {
-        lines.push("*Tonality & Rhythm:*\n" + recs.tonality_rhythm.map((r: string) => `  • ${r}`).join("\n"));
-      }
-      const diagnostic = lines.join("\n");
-      onRewriteDiagnostic?.(diagnostic);
-
-      toast.success("Strategic rewrite complete. Output updated. Diagnostic posted to support chat.");
+      const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: finalHtml, keywords: kw } });
+      if (!rewritten.ok) { toast.error(rewritten.error); return; }
+      setFinalHtml(rewritten.html);
+      toast.success("Rewrite complete. Output updated.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Rewrite failed.");
     } finally {
       setRewriting(false);
     }
-  }, [busy, finalHtml, apiKey, keywords, jobText, setKeywords, setFinalHtml, setRewriting, toastBusy, onRewriteDiagnostic]);
+  }, [busy, finalHtml, apiKey, keywords, jobText, setKeywords, setFinalHtml, setRewriting, toastBusy]);
 
   const onCustomizeOutput = useCallback(async (instructions: string, kind: DocKind) => {
     if (busy) { toastBusy(); return; }
