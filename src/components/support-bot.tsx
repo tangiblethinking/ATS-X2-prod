@@ -256,7 +256,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
           .slice(-6)
           .map((m) => ({
             role: m.from === "user" ? ("user" as const) : ("assistant" as const),
-            content: (m.text || (m.textKey ? t(m.textKey) : "")).slice(0, 4000),
+            content: (m.text || (m.textKey ? t(m.textKey) : "")).slice(0, 7000),
           }))
           .filter((m) => m.content.trim().length > 0);
 
@@ -267,10 +267,11 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
           const plain = result.reply.trim().replace(/\*\*/g, "").replace(/^\s*[-*]\s+/gm, "");
           await pushBot({ text: plain });
         } else {
-          await pushBot({ textKey: "liveChatError" });
+          await pushBot({ text: result.error || t("liveChatError") });
         }
-      } catch {
-        await pushBot({ textKey: "liveChatError" });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "";
+        await pushBot({ text: detail || t("liveChatError") });
       }
       return;
     }

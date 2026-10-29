@@ -542,12 +542,12 @@ export const supportChat = createServerFn({ method: "POST" })
   .validator(
     z.object({
       apiKey: apiKeySchema,
-      message: z.string().trim().min(1).max(8000),
+      message: z.string().trim().min(1).max(60000),
       history: z
         .array(
           z.object({
             role: z.enum(["user", "assistant"]),
-            content: z.string().max(4000),
+            content: z.string().max(8000),
           }),
         )
         .max(8)
@@ -555,9 +555,28 @@ export const supportChat = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const urls = Array.from(data.message.match(URL_RE) || []).slice(0, 3);
-    const imageCandidates = urls.filter((u) => IMAGE_EXT.test(u));
-    const pageUrls = urls.filter((u) => !IMAGE_EXT.test(u));
+    const htmlStart = data.message.search(/<!DOCTYPE|<html[\s>]/i);
+    const question = (htmlStart > 0 ? data.message.slice(0, htmlStart) : data.message).trim();
+    const resumeText =
+      htmlStart > 0
+        ? data.message
+            .slice(htmlStart)
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&/g, "&")
+            .replace(/&nbsp;/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 12000)
+        : "";
+
+    const cleanUrl = (raw: string) => raw.replace(/[.,;:!?]+$/g, "");
+    const questionUrls = Array.from(question.match(URL_RE) || []).map(cleanUrl);
+    const imageCandidates = questionUrls.filter((u) => IMAGE_EXT.test(u));
+    const pageUrls = questionUrls.filter(
+      (u) => !IMAGE_EXT.test(u) && !u.includes("fonts.googleapis.com"),
+    );
 
     const images: { mimeType: string; data: string }[] = [];
     const previewUrls: string[] = [];
@@ -571,7 +590,10 @@ export const supportChat = createServerFn({ method: "POST" })
         unreadImages.push(u);
       }
     }
-    const contextUrls = [...pageUrls, ...unreadImages];
+    const contextUrls = [...pageUrls, ...unreadImages].slice(0, 2);
+    const prompt = resumeText
+      ? `${question}\n\nResume content pasted by the user:\n${resumeText}`
+      : data.message;
 
     const system = `You are a friendly, helpful assistant. Answer questions about ATS Align (a resume-to-job alignment app) or any other topic the user asks about.
 
@@ -583,7 +605,8 @@ Rules:
 - Be concise and warm. If you do not know an app-specific detail, say so rather than inventing features.
 - If the user includes a URL, use the linked page content (or the attached image) to answer.
 - If an image is attached, describe what you actually see. Do not invent details.
-- If a link cannot be read, say so clearly.`;
+- If a link cannot be read, say so clearly.
+- If resume content is included, compare it directly to the job posting. Name specific matches and gaps. Do not invent experience.`;
 
     const history = (data.history ?? []).slice(-6).map((h) => ({
       role: h.role as "user" | "assistant",
@@ -591,18 +614,28 @@ Rules:
     }));
 
     const { geminiChat } = await import("./gemini.server");
-    const result = await geminiChat({
+    const chatMessages = [
+      { role: "system" as const, content: system },
+      ...history,
+      { role: "user" as const, content: prompt },
+    ];
+    let result = await geminiChat({
       apiKey: data.apiKey,
-      messages: [
-        { role: "system", content: system },
-        ...history,
-        { role: "user", content: data.message },
-      ],
-      maxTokens: 900,
+      messages: chatMessages,
+      maxTokens: 1200,
       temperature: 0.7,
       urlContext: contextUrls.length > 0,
       images: images.length ? images : undefined,
     });
+    if (!result.ok && contextUrls.length > 0) {
+      result = await geminiChat({
+        apiKey: data.apiKey,
+        messages: chatMessages,
+        maxTokens: 1200,
+        temperature: 0.7,
+        images: images.length ? images : undefined,
+      });
+    }
 
     if (!result.ok) {
       return { ok: false as const, error: result.error || "Could not reach Gemini." };
