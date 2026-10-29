@@ -201,8 +201,11 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     setIsBotTyping(false);
   }
 
-  function pushUser(text: string) {
-    setMessages((prev) => [...prev, { id: crypto.randomUUID(), from: "user", text }]);
+  function pushUser(text: string, images?: string[]) {
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), from: "user", text, images: images?.length ? images : undefined },
+    ]);
   }
 
   function goTo(next: Step) {
@@ -240,11 +243,14 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     if (!text) return;
     setDraft("");
     if (trySaveKey(text)) return;
-    pushUser(text);
 
     // Live Gemini chat once a key is saved
     if (hasKey) {
       setIsBotTyping(true);
+      const imageUrls = Array.from(text.match(/https?:\/\/[^\s<>"')\]]+/gi) || []).filter((u) =>
+        /\.(png|jpe?g|webp|gif|bmp)(\?.*)?$/i.test(u),
+      );
+      pushUser(text, imageUrls);
       try {
         const history = messages
           .slice(-6)
@@ -270,6 +276,7 @@ export function SupportBot({ apiKey, onApiKeyChange }: Props) {
     }
 
     // No key yet — keep the scripted help path
+    pushUser(text);
     pushBot({ textKey: "fallbackHelp" });
   }
 
