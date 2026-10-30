@@ -16,6 +16,7 @@ import {
   scannabilityPass,
   terminologyPass,
 } from "@/lib/optimize";
+import { rewriteNew } from "@/lib/rewrite-new";
 import type { JobResult } from "@/lib/job-search";
 import {
   MAX_JOB_CHARS,
@@ -222,20 +223,10 @@ export function usePipelineActions(opts: {
     if (!isPlausibleApiKey(apiKey)) { toast.error("Save a Gemini API key first."); return; }
     setRewriting(true);
     try {
-      let kw = keywords;
-      if (!kw || (kw.keywords.length === 0 && kw.phrases.length === 0 && kw.must_have.length === 0 && kw.nice_to_have.length === 0)) {
-        const job = jobText.trim();
-        if (job.length < 40) {
-          toast.error("Keywords are missing and the job description text is too short to re-extract.");
-          return;
-        }
-        const extracted = await extractKeywords({ data: { apiKey, jobText: job } });
-        if (!extracted.ok) { toast.error(extracted.error); return; }
-        kw = extracted.keywords;
-        setKeywords(kw);
-      }
-      const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: finalHtml, keywords: kw } });
+      const rewritten = await rewriteNew({ data: { apiKey, resumeHtml: finalHtml } });
+      addLog(rewritten.log);
       if (!rewritten.ok) { toast.error(rewritten.error); return; }
+      if (rewritten.report) addLog(`[rewriteNew] Scores and recommendations:\n${rewritten.report}`);
       setFinalHtml(rewritten.html);
       toast.success("Rewrite complete. Output updated.");
     } catch (err) {
@@ -243,7 +234,7 @@ export function usePipelineActions(opts: {
     } finally {
       setRewriting(false);
     }
-  }, [busy, finalHtml, apiKey, keywords, jobText, setKeywords, setFinalHtml, setRewriting, toastBusy]);
+  }, [busy, finalHtml, apiKey, setFinalHtml, setRewriting, toastBusy, addLog]);
 
   const onCustomizeOutput = useCallback(async (instructions: string, kind: DocKind) => {
     if (busy) { toastBusy(); return; }
