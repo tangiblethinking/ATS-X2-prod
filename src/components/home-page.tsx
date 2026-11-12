@@ -31,7 +31,7 @@ import { toast } from "sonner";
 
 const idleStatuses = (): Record<StepId, StepStatus> => ({
   1: "idle", 2: "idle", 3: "idle", 4: "idle", 5: "idle", 6: "idle",
-  7: "idle", 8: "idle", 9: "idle", 10: "idle", 11: "idle",
+  7: "idle", 8: "idle", 9: "idle", 10: "idle", 11: "idle", 12: "idle",
 });
 
 type Draft = { jobUrl: string; jobText: string; resumeHtml: string };

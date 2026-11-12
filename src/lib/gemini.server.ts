@@ -16,20 +16,79 @@ export type ChatResult =
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+const MODEL_CACHE: { models: string[]; expires: number; keyHash: string } = { models: [], expires: 0, keyHash: "" };
+const CALL_TIMESTAMPS: number[] = [];
+const BAD_MODELS = new Set<string>();
+const SAFE_RPM = 8;
+
+function hashKey(key: string): string {
+  return key.slice(-8);
+}
+
+export async function discoverAvailableModels(apiKey: string): Promise<{ ok: true; models: string[]; primary: string } | { ok: false; error: string }> {
+  const now = Date.now();
+  const keyHash = hashKey(apiKey);
+  if (MODEL_CACHE.models.length && MODEL_CACHE.expires > now && MODEL_CACHE.keyHash === keyHash) {
+    return { ok: true, models: MODEL_CACHE.models, primary: MODEL_CACHE.models[0] };
+  }
+
+  const url = `${GEMINI_BASE}/models?pageSize=100`;
+  try {
+    const res = await fetch(url, { headers: { "x-goog-api-key": apiKey } });
+    if (!res.ok) return { ok: false, error: statusError(res.status) };
+    const data = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
+    const raw = data.models ?? [];
+    const usable = raw
+      .map((m) => m.name.replace(/^models\//, ""))
+      .filter((id) => {
+        const lower = id.toLowerCase();
+        if (!lower.includes("flash")) return false;
+        if (lower.includes("image") || lower.includes("tts") || lower.includes("live") || lower.includes("omni") || lower.includes("pro") || lower.includes("carbon") || lower.includes("argon")) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aLite = a.includes("flash-lite") ? 0 : 1;
+        const bLite = b.includes("flash-lite") ? 0 : 1;
+        return aLite - bLite || a.localeCompare(b);
+      });
+
+    const models = usable.length ? usable : EMERGENCY_MODELS;
+    MODEL_CACHE.models = models;
+    MODEL_CACHE.expires = now + 10 * 60 * 1000;
+    MODEL_CACHE.keyHash = keyHash;
+    BAD_MODELS.clear();
+    return { ok: true, models, primary: models[0] };
+  } catch {
+    return { ok: false, error: "Could not list available models. Using emergency list." };
+  }
+}
+
+async function paceForRateLimit(): Promise<void> {
+  const now = Date.now();
+  const oneMinAgo = now - 60_000;
+  while (CALL_TIMESTAMPS.length && CALL_TIMESTAMPS[0] < oneMinAgo) CALL_TIMESTAMPS.shift();
+  if (CALL_TIMESTAMPS.length >= SAFE_RPM) {
+    const wait = Math.max(0, CALL_TIMESTAMPS[0] + 60_000 - now + 800);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+  CALL_TIMESTAMPS.push(Date.now());
+}
+
+function getUsableModels(): string[] {
+  const list = MODEL_CACHE.models.length ? MODEL_CACHE.models : EMERGENCY_MODELS;
+  return list.filter((m) => !BAD_MODELS.has(m));
+}
+
+function markModelBad(model: string) {
+  BAD_MODELS.add(model);
+}
+
 /**
- * Free-tier-friendly Flash / Flash-Lite models (Google AI Studio).
- * Tried in order until one succeeds (404 / not-found / quota → next).
- * Prefer Flash-Lite first for higher free RPM, then full Flash.
+ * Models are discovered dynamically via List Models at pipeline start.
+ * Preference: Flash-Lite (higher free RPM) then Flash. Emergency fallback used if discovery fails.
+ * See discoverAvailableModels().
  */
-const FREE_TIER_MODELS = [
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-3.5-flash",
-  "gemini-3.6-flash",
-  "gemini-3.1-flash-lite",
-  "gemini-3.7-flash",
-] as const;
+const EMERGENCY_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
 
 function statusError(status: number): string {
   if (status === 400) {
@@ -155,10 +214,16 @@ export async function geminiChat(opts: {
     "x-goog-api-key": opts.apiKey,
   };
 
+  await paceForRateLimit();
+  const models = getUsableModels();
+  if (!models.length) {
+    return { ok: false, error: "No usable free-tier models available right now. Try again in a minute." };
+  }
+
   let lastError = "Could not reach the model service.";
   let lastStatus: number | undefined;
 
-  for (const model of FREE_TIER_MODELS) {
+  for (const model of models) {
     const url = `${GEMINI_BASE}/models/${model}:generateContent`;
     let res: Response;
     const controller = new AbortController();
@@ -233,8 +298,9 @@ export async function geminiChat(opts: {
       return { ok: false, error: lastError, status: res.status, meta: { model, inputChars, outputChars: 0 } };
     }
 
-    // 404 / 400 (model unavailable) or 429 (quota on this model) → try next free model
-    if (res.status === 404 || res.status === 400 || res.status === 429) {
+    // Mark model bad and try next on 404/400/429/5xx
+    if (res.status === 404 || res.status === 400 || res.status === 429 || res.status >= 500) {
+      markModelBad(model);
       continue;
     }
 
@@ -285,10 +351,16 @@ export async function geminiChatWithPdf(opts: {
     "x-goog-api-key": opts.apiKey,
   };
 
+  await paceForRateLimit();
+  const models = getUsableModels();
+  if (!models.length) {
+    return { ok: false, error: "No usable free-tier models available right now. Try again in a minute." };
+  }
+
   let lastError = "Could not reach the model service.";
   let lastStatus: number | undefined;
 
-  for (const model of FREE_TIER_MODELS) {
+  for (const model of models) {
     const url = `${GEMINI_BASE}/models/${model}:generateContent`;
     let res: Response;
     try {
@@ -347,7 +419,8 @@ export async function geminiChatWithPdf(opts: {
       return { ok: false, error: lastError, status: res.status, meta: { model, inputChars, outputChars: 0 } };
     }
 
-    if (res.status === 404 || res.status === 400 || res.status === 429) {
+    if (res.status === 404 || res.status === 400 || res.status === 429 || res.status >= 500) {
+      markModelBad(model);
       continue;
     }
 

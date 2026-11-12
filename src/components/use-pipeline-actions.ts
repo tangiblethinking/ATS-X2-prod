@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { isPlausibleApiKey } from "@/lib/api-key-store";
 import { looksLikeHtml } from "@/lib/html-clean";
+import { discoverAvailableModels } from "@/lib/gemini.server";
 import {
   analyzeIntent,
   analyzeResume,
@@ -111,102 +112,112 @@ export function usePipelineActions(opts: {
     let currentKeywords: KeywordSet | null = null;
 
     try {
-      // 1. Job Spec Scraper
-      mark(1, "running", "Collecting full job description text…");
+      // 1. Model Discovery
+      mark(1, "running", "Discovering available free-tier models…");
+      const disc = await discoverAvailableModels(apiKey);
+      if (!disc.ok) {
+        fail(1, disc.error);
+        return;
+      }
+      mark(1, "done", `Using ${disc.primary} (${disc.models.length} available)`);
+      await sleep(BRIEF_CHECK_MS);
+
+      // 2. Job Spec Scraper
+      mark(2, "running", "Collecting full job description text…");
       const fetched = await fetchJobDescription({ data: { url: urlToUse } });
       if (fetched.ok) {
         currentJob = fetched.text.slice(0, MAX_JOB_CHARS);
         setJobText(currentJob);
       } else if (currentJob.length >= 40) {
-        mark(1, "running", `${fetched.error} Using pasted text.`);
+        mark(2, "running", `${fetched.error} Using pasted text.`);
       } else {
-        fail(1, fetched.error);
+        fail(2, fetched.error);
         return;
       }
-      mark(1, "done", `${currentJob.length.toLocaleString()} characters collected`);
+      mark(2, "done", `${currentJob.length.toLocaleString()} characters collected`);
       await sleep(BRIEF_CHECK_MS);
 
-      // 2. Intent & Analysis
-      mark(2, "running", "Analyzing what the job is looking for…");
+      // 3. Intent & Analysis
+      mark(3, "running", "Analyzing what the job is looking for…");
       const intentResult = await analyzeIntent({ data: { apiKey, jobText: currentJob } });
       addLog((intentResult as any).log);
-      if (!intentResult.ok) { fail(2, intentResult.error); return; }
-      mark(2, "done", (intentResult as any).intent?.slice(0, 120) || "Intent analyzed");
+      if (!intentResult.ok) { fail(3, intentResult.error); return; }
+      mark(3, "done", (intentResult as any).intent?.slice(0, 120) || "Intent analyzed");
       await sleep(BRIEF_CHECK_MS);
 
       // 3. Keyword & Phrase Extraction
-      mark(3, "running", "Extracting keywords and phrases…");
+      mark(4, "running", "Extracting keywords and phrases…");
       const extracted = await extractKeywords({ data: { apiKey, jobText: currentJob } });
       addLog((extracted as any).log);
-      if (!extracted.ok) { fail(3, extracted.error); return; }
+      if (!extracted.ok) { fail(4, extracted.error); return; }
       currentKeywords = extracted.keywords;
       setKeywords(currentKeywords);
-      mark(3, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords / phrases extracted`);
+      mark(4, "done", `${currentKeywords.keywords.length + currentKeywords.phrases.length} keywords / phrases extracted`);
       await sleep(BRIEF_CHECK_MS);
 
       // 4. Resume Analysis
-      mark(4, "running", "Extracting all information from the resume…");
+      mark(5, "running", "Extracting all information from the resume…");
       const resumeAnalysis = await analyzeResume({ data: { apiKey, resumeHtml: original } });
       addLog((resumeAnalysis as any).log);
-      if (!resumeAnalysis.ok) { fail(4, resumeAnalysis.error); return; }
-      mark(4, "done", "Resume facts extracted");
+      if (!resumeAnalysis.ok) { fail(5, resumeAnalysis.error); return; }
+      mark(5, "done", "Resume facts extracted");
       await sleep(BRIEF_CHECK_MS);
 
       // 5. Keyword Injection Rewrite
-      mark(5, "running", "Injecting keywords into existing language…");
+      mark(6, "running", "Injecting keywords into existing language…");
       const rewritten = await rewriteResume({ data: { apiKey, resumeHtml: original, keywords: currentKeywords } });
       addLog((rewritten as any).log);
-      if (!rewritten.ok) { fail(5, rewritten.error); return; }
+      if (!rewritten.ok) { fail(6, rewritten.error); return; }
       currentHtml = rewritten.html;
-      mark(5, "done", "Keywords woven into existing content");
+      mark(6, "done", "Keywords woven into existing content");
       await sleep(BRIEF_CHECK_MS);
 
       // 6. Terminology Accuracy Pass
-      mark(6, "running", "Checking technical accuracy…");
+      mark(7, "running", "Checking technical accuracy…");
       const term = await terminologyPass({ data: { apiKey, originalHtml: original, draftHtml: currentHtml } });
       addLog((term as any).log);
-      if (!term.ok) { fail(6, term.error || "Terminology pass failed"); return; }
+      if (!term.ok) { fail(7, term.error || "Terminology pass failed"); return; }
       currentHtml = term.html;
-      mark(6, "done", "Terminology verified");
+      mark(7, "done", "Terminology verified");
       await sleep(BRIEF_CHECK_MS);
 
       // 7. Human Natural Language Pass
-      mark(7, "running", "Rewriting for natural human English…");
+      mark(8, "running", "Rewriting for natural human English…");
       const natural = await naturalLanguagePass({ data: { apiKey, html: currentHtml } });
       addLog((natural as any).log);
-      if (!natural.ok) { fail(7, natural.error || "Natural language pass failed"); return; }
+      if (!natural.ok) { fail(8, natural.error || "Natural language pass failed"); return; }
       currentHtml = natural.html;
-      mark(7, "done", "Natural language applied");
+      mark(8, "done", "Natural language applied");
       await sleep(BRIEF_CHECK_MS);
 
       // 8. Human Scannability Pass
-      mark(8, "running", "Optimizing for human scannability…");
+      mark(9, "running", "Optimizing for human scannability…");
       const scan = await scannabilityPass({ data: { apiKey, html: currentHtml } });
       addLog((scan as any).log);
-      if (!scan.ok) { fail(8, scan.error || "Scannability pass failed"); return; }
+      if (!scan.ok) { fail(9, scan.error || "Scannability pass failed"); return; }
       currentHtml = scan.html;
-      mark(8, "done", "Scannability improved");
+      mark(9, "done", "Scannability improved");
       await sleep(BRIEF_CHECK_MS);
 
       // 9. Inject into Original Layout (already done via slots; confirm)
-      mark(9, "running", "Placing rewritten text into original HTML layout…");
-      mark(9, "done", "Original layout structure preserved");
+      mark(10, "running", "Placing rewritten text into original HTML layout…");
+      mark(10, "done", "Original layout structure preserved");
       await sleep(BRIEF_CHECK_MS);
 
       // 10. Audit & QA
-      mark(10, "running", "Auditing content and HTML…");
+      mark(11, "running", "Auditing content and HTML…");
       const audited = await auditAndQA({ data: { apiKey, originalHtml: original, currentHtml, keywords: currentKeywords } });
       addLog((audited as any).log);
-      if (!audited.ok) { fail(10, audited.error || "Audit failed"); return; }
+      if (!audited.ok) { fail(11, audited.error || "Audit failed"); return; }
       currentHtml = audited.html;
-      mark(10, "done", `${(audited as any).flags?.length || 0} issues flagged`);
+      mark(11, "done", `${(audited as any).flags?.length || 0} issues flagged`);
       await sleep(BRIEF_CHECK_MS);
 
       // 11. Final HTML
-      mark(11, "running", "Preparing final HTML…");
+      mark(12, "running", "Preparing final HTML…");
       const cleaned = await cleanHtml({ data: { originalHtml: original, currentHtml } });
       setFinalHtml(cleaned.html);
-      mark(11, "done", "Final HTML ready");
+      mark(12, "done", "Final HTML ready");
       await sleep(BRIEF_CHECK_MS);
       toast.success("Pipeline finished.");
     } catch (err) {
