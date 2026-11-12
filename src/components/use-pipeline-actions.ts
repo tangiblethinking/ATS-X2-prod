@@ -2,13 +2,13 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { isPlausibleApiKey } from "@/lib/api-key-store";
 import { looksLikeHtml } from "@/lib/html-clean";
-import { discoverAvailableModels } from "@/lib/gemini.server";
 import {
   analyzeIntent,
   analyzeResume,
   auditAndQA,
   cleanHtml,
   customizeResume,
+  discoverModels,
   extractKeywords,
   fetchJobDescription,
   generateCoverLetter,
@@ -114,7 +114,7 @@ export function usePipelineActions(opts: {
     try {
       // 1. Model Discovery
       mark(1, "running", "Discovering available free-tier models…");
-      const disc = await discoverAvailableModels(apiKey);
+      const disc = await discoverModels({ data: { apiKey } });
       if (!disc.ok) {
         fail(1, disc.error);
         return;

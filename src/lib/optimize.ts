@@ -122,6 +122,14 @@ export const verifyApiKey = createServerFn({ method: "POST" })
     return verifyGeminiKey(data.apiKey);
   });
 
+
+export const discoverModels = createServerFn({ method: "POST" })
+  .validator(z.object({ apiKey: apiKeySchema }))
+  .handler(async ({ data }) => {
+    const { discoverAvailableModels } = await import("./gemini.server");
+    return discoverAvailableModels(data.apiKey);
+  });
+
 export const fetchJobDescription = createServerFn({ method: "POST" })
   .validator(z.object({ url: z.string().trim().min(8).max(2000) }))
   .handler(async ({ data }) => {
